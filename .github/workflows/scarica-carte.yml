@@ -1,0 +1,121 @@
+name: Scarica carte da Wikimedia
+
+# Scarica da Wikimedia Commons le foto delle carte napoletane e piacentine
+# (con autore e licenza) e le salva nel ramo "carte-sorgenti".
+# Parte da solo quando questo file viene aggiunto, oppure da Actions > Run workflow.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/scarica-carte.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  scarica:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Scarica foto e licenze
+        run: |
+          mkdir sorgenti && cd sorgenti
+          python3 - <<'PY'
+          import json, os, re, shutil, time, urllib.parse, urllib.request
+          API = "https://commons.wikimedia.org/w/api.php"
+          UA = "StracciaCamicia/1.0 (https://github.com/DeveloperMatt02/straccia-camicia-p2p)"
+          MAX_BYTES = 60 * 1024 * 1024
+          CATEGORIE = ["Category:Naples deck", "Category:Piacenza deck", "Category:Piacentine deck",
+                       "Category:Neapolitan playing cards", "Category:Piacentine playing cards"]
+          RICERCHE = ["carte napoletane", "carte piacentine", "Naples deck", "Piacenza deck",
+                      "Neapolitan pattern playing cards", "Piacentine pattern playing cards", "napoletane", "piacentine"]
+          SICURI = ["File:Carte napoletane al completo.jpg", "File:Carte piacentine al completo.jpg",
+                    "File:Carte da gioco napoletane coppe.jpg", "File:Carte da gioco napoletane denari.jpg",
+                    "File:Carte da gioco napoletane bastoni.jpg", "File:Carte da gioco napoletane spade.jpg",
+                    "File:Carte Napoletane retro.jpg"]
+          PERTINENTE = re.compile(r"napol|piacen|naples|neapol", re.I)
+
+          def api(**p):
+              p.update(format="json", formatversion="2")
+              req = urllib.request.Request(API + "?" + urllib.parse.urlencode(p), headers={"User-Agent": UA})
+              for t in range(4):
+                  try:
+                      with urllib.request.urlopen(req, timeout=60) as r:
+                          return json.load(r)
+                  except Exception as e:
+                      print("  api:", e); time.sleep(2 + 2 * t)
+              return {}
+
+          def scarica(url, path):
+              req = urllib.request.Request(url, headers={"User-Agent": UA})
+              for t in range(4):
+                  try:
+                      with urllib.request.urlopen(req, timeout=300) as r, open(path, "wb") as f:
+                          shutil.copyfileobj(r, f)
+                      return True
+                  except Exception as e:
+                      print("  download:", e); time.sleep(3 + 3 * t)
+              return False
+
+          def in_categoria(cat, prof=1, visti=set()):
+              if cat in visti: return []
+              visti.add(cat)
+              out = []
+              d = api(action="query", list="categorymembers", cmtitle=cat, cmtype="file|subcat", cmlimit="500")
+              for m in d.get("query", {}).get("categorymembers", []):
+                  if m["title"].startswith("File:"): out.append(m["title"])
+                  elif prof > 0: out += in_categoria(m["title"], prof - 1)
+              if out: print(f"{cat}: {len(out)} file")
+              return out
+
+          titoli = list(SICURI)
+          for c in CATEGORIE: titoli += in_categoria(c)
+          for q in RICERCHE:
+              d = api(action="query", list="search", srsearch=q, srnamespace="6", srlimit="50")
+              titoli += [r["title"] for r in d.get("query", {}).get("search", []) if PERTINENTE.search(r["title"])]
+          unici = []
+          for t in titoli:
+              if t not in unici and re.search(r"\.(jpe?g|png|svg|tiff?|webp)$", t, re.I): unici.append(t)
+          unici = unici[:200]
+          print(f"{len(unici)} file candidati")
+
+          info = []
+          for i in range(0, len(unici), 40):
+              d = api(action="query", prop="imageinfo", titles="|".join(unici[i:i + 40]),
+                      iiprop="url|size|mime|extmetadata", iiurlwidth="5000")
+              for p in d.get("query", {}).get("pages", []):
+                  ii = (p.get("imageinfo") or [None])[0]
+                  if not ii: continue
+                  meta = ii.get("extmetadata", {})
+                  val = lambda k: re.sub(r"<[^>]+>", "", (meta.get(k) or {}).get("value", "")).strip()
+                  svg = ii.get("mime") == "image/svg+xml"
+                  info.append({"titolo": p["title"], "pagina": ii.get("descriptionurl", ""),
+                               "url": ii["url"] if svg else (ii.get("thumburl") or ii["url"]),
+                               "larghezza": ii.get("width"), "altezza": ii.get("height"), "byte": ii.get("size"),
+                               "mime": ii.get("mime"), "licenza": val("LicenseShortName"),
+                               "licenza_url": val("LicenseUrl"), "autore": val("Artist"),
+                               "crediti": val("Credit"), "descrizione": val("ImageDescription")[:500]})
+
+          for n, f in enumerate(info, 1):
+              nome = re.sub(r"[^\w.\-]+", "_", f["titolo"][5:])
+              if (f["byte"] or 0) > MAX_BYTES and "/thumb/" not in f["url"]:
+                  print("salto (troppo grande):", nome); continue
+              ext = os.path.splitext(urllib.parse.urlparse(f["url"]).path)[1]
+              if ext and not nome.lower().endswith(ext.lower()): nome += ext
+              print(f"[{n}/{len(info)}] {nome}")
+              f["file"] = nome if scarica(f["url"], nome) else None
+              time.sleep(0.3)
+
+          json.dump(info, open("licenze.json", "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+          print("Scaricate:", sum(1 for f in info if f.get("file")))
+          PY
+
+      - name: Salva nel ramo carte-sorgenti
+        run: |
+          cd sorgenti
+          git init -q -b carte-sorgenti
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Foto delle carte da Wikimedia Commons"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" carte-sorgenti
