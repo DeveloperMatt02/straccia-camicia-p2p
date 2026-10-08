@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://TUO-NOME-UTENTE.github.io/straccia-camicia/"><b>Gioca ora</b></a>
+  <a href="https://developermatt02.github.io/straccia-camicia/"><b>Gioca ora</b></a>
   &nbsp;&nbsp;|&nbsp;&nbsp;
   <a href="README.en.md">English version</a>
 </p>
