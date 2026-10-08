@@ -20,13 +20,13 @@
     <td align="center"><img src="docs/screenshots/stanza.jpg" width="190" alt="La stanza con il codice da condividere"></td>
     <td align="center"><img src="docs/screenshots/tavolo.jpg" width="190" alt="Il tavolo durante una partita"></td>
     <td align="center"><img src="docs/screenshots/fine.jpg" width="190" alt="Fine partita con la classifica della serata"></td>
-    <td align="center"><img src="docs/screenshots/table-en.jpg" width="190" alt="Il tavolo in inglese con le carte moderne"></td>
+    <td align="center"><img src="docs/screenshots/table-en.jpg" width="190" alt="Il tavolo in inglese con le carte piacentine"></td>
   </tr>
   <tr>
     <td align="center"><sub>Crei la stanza e mandi il codice</sub></td>
     <td align="center"><sub>Asso, due e tre fanno pagare</sub></td>
     <td align="center"><sub>Classifica e rivincita</sub></td>
-    <td align="center"><sub>Anche in inglese, con carte moderne</sub></td>
+    <td align="center"><sub>Anche in inglese, con le piacentine</sub></td>
   </tr>
 </table>
 
@@ -38,7 +38,7 @@ Straccia Camicia (o scamicia, cavacamisa, tras in camisa, pela gallina, a second
 - **Gira su tutto**: telefono, tablet e PC, direttamente dal browser. Si può aggiungere alla schermata Home come un'app.
 - **Gratis davvero**: è un sito statico su GitHub Pages; i dispositivi si parlano direttamente tra loro, quindi non c'è nessun server da pagare.
 - **Tutte le regole**, più le varianti regionali da scegliere per ogni stanza.
-- **Carte disegnate da zero** in tre stili: napoletane, piacentine e moderne.
+- **Carte vere**: napoletane e piacentine dalle scansioni di mazzi reali, più uno stile moderno con i numeri grandi, comodo sul telefono. Ognuno sceglie il suo.
 - **Italiano e inglese**: ognuno sceglie la sua lingua, anche nella stessa partita.
 - **Sfottò, suoni e vibrazione**, classifica della serata e rivincita al volo.
 - **Prova contro il computer** per imparare le regole da soli, anche senza internet.
@@ -92,14 +92,14 @@ Su Wi-Fi di casa e 4G/5G funziona quasi sempre. Alcune reti (certe reti universi
 
 ## Com'è fatto
 
-JavaScript puro, senza framework né passaggi di build. Le carte sono disegnate in SVG, i suoni sono sintetizzati al volo.
+JavaScript puro, senza framework né passaggi di build. Napoletane e piacentine sono immagini WebP leggere (circa 30 KB a carta) in [`carte/`](carte); lo stile moderno è disegnato in SVG e i suoni sono sintetizzati al volo.
 
 | File | Cosa contiene |
 | --- | --- |
 | [`js/engine.js`](js/engine.js) | Le regole del gioco, senza grafica |
 | [`js/room.js`](js/room.js) | La stanza: turni, timer, schiaffi, classifica (gira su chi crea la stanza) |
 | [`js/net.js`](js/net.js) | Il collegamento tra i dispositivi con [PeerJS](https://peerjs.com) (WebRTC) |
-| [`js/cards.js`](js/cards.js) | Le carte nei tre stili e il dorso a camicia |
+| [`js/cards.js`](js/cards.js) | Le carte nei tre stili: immagini vere e carte moderne in SVG |
 | [`js/i18n.js`](js/i18n.js) | I testi in italiano e inglese |
 | [`js/main.js`](js/main.js) | L'interfaccia |
 | [`js/audio.js`](js/audio.js) | Suoni e vibrazione |
@@ -120,6 +120,7 @@ I test delle regole giocano 2000 partite casuali con 2–6 giocatori e 1–3 maz
 
 - Regole e varianti dalla voce [Straccia camicia](https://it.wikipedia.org/wiki/Straccia_camicia) di Wikipedia.
 - La partita infinita è quella trovata con [drago-96/cavacamisa](https://github.com/drago-96/cavacamisa).
+- Carte napoletane: scansioni di un mazzo Dal Negro di Trocche100; carte piacentine: scansione di Florixc. Entrambe da Wikimedia Commons, di pubblico dominio. Dettagli in [`carte/CREDITI.md`](carte/CREDITI.md).
 - Collegamento peer-to-peer con [PeerJS](https://github.com/peers/peerjs) (licenza MIT).
 
 ## Licenza

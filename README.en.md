@@ -17,7 +17,7 @@
 
 <table align="center">
   <tr>
-    <td align="center"><img src="docs/screenshots/table-en.jpg" width="190" alt="The table in English with the modern cards"></td>
+    <td align="center"><img src="docs/screenshots/table-en.jpg" width="190" alt="The table in English with Piacentine cards"></td>
     <td align="center"><img src="docs/screenshots/stanza.jpg" width="190" alt="The room with the code to share"></td>
     <td align="center"><img src="docs/screenshots/tavolo.jpg" width="190" alt="The table during a game"></td>
     <td align="center"><img src="docs/screenshots/fine.jpg" width="190" alt="End of the game with tonight's standings"></td>
@@ -32,7 +32,7 @@ Straccia Camicia ("tear the shirt") is the Italian cousin of Beggar-My-Neighbour
 - **Runs anywhere**: phone, tablet and computer, straight from the browser. You can add it to your home screen like an app.
 - **Actually free**: it's a static site on GitHub Pages and the devices talk directly to each other, so there's no server to pay for.
 - **The full rules**, plus regional variants you pick per room.
-- **Hand-drawn cards** in three styles: Neapolitan, Piacentine and modern.
+- **Real cards**: Neapolitan and Piacentine decks from scans of actual printed decks, plus a modern style with big numbers that reads well on a phone. Everyone picks their own.
 - **Italian and English**: everyone picks their own language, even in the same game.
 - **Taunts, sound and vibration**, tonight's standings and instant rematches.
 - **Play against the computer** to learn the rules on your own, even offline.
@@ -76,11 +76,11 @@ If someone can't join, their network may be blocking direct connections (some un
 
 No build step, no dependencies. Fork the repository, then go to **Settings → Pages**, choose **Deploy from a branch**, branch **main**, folder **/ (root)**, and save. To run it locally, serve the folder with any static server (for example `python3 -m http.server`).
 
-The code is plain JavaScript: rules in [`js/engine.js`](js/engine.js), the room in [`js/room.js`](js/room.js), networking with [PeerJS](https://peerjs.com) in [`js/net.js`](js/net.js), SVG cards in [`js/cards.js`](js/cards.js), translations in [`js/i18n.js`](js/i18n.js). Run the tests with `npm test`.
+The code is plain JavaScript: rules in [`js/engine.js`](js/engine.js), the room in [`js/room.js`](js/room.js), networking with [PeerJS](https://peerjs.com) in [`js/net.js`](js/net.js), the cards in [`js/cards.js`](js/cards.js) and [`carte/`](carte), translations in [`js/i18n.js`](js/i18n.js). Run the tests with `npm test`.
 
 ## Credits
 
-Rules from the Italian Wikipedia article [Straccia camicia](https://it.wikipedia.org/wiki/Straccia_camicia). The endless game is the one found with [drago-96/cavacamisa](https://github.com/drago-96/cavacamisa). Peer-to-peer networking by [PeerJS](https://github.com/peers/peerjs) (MIT).
+Rules from the Italian Wikipedia article [Straccia camicia](https://it.wikipedia.org/wiki/Straccia_camicia). The endless game is the one found with [drago-96/cavacamisa](https://github.com/drago-96/cavacamisa). Neapolitan cards: scans of a Dal Negro deck by Trocche100; Piacentine cards: scan by Florixc; both public domain, from Wikimedia Commons (details in [`carte/CREDITI.md`](carte/CREDITI.md)). Peer-to-peer networking by [PeerJS](https://github.com/peers/peerjs) (MIT).
 
 ## License
 

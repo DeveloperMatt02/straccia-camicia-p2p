@@ -1,5 +1,5 @@
 // Interfaccia di Straccia Camicia: schermate, tavolo, animazioni e comandi.
-import { installSprite, cardSVG, backSVG, STYLES } from './cards.js';
+import { installSprite, cardHTML, backHTML, backSVG, preloadDeck, STYLES } from './cards.js';
 import { createHost, joinRoom, createPractice, normalizeCode } from './net.js';
 import { sfx, unlock, setSound, setVibrate } from './audio.js';
 import { payValue } from './engine.js';
@@ -20,7 +20,7 @@ const prefs = Object.assign({ name: '', style: 'napoletano', sound: true, vibrat
 function savePrefs() { try { localStorage.setItem('sc-prefs', JSON.stringify(prefs)); } catch {} }
 setSound(prefs.sound); setVibrate(prefs.vibrate);
 setLang(detectLang(prefs.lang));
-const card = (c, style = prefs.style) => cardSVG(c, style, n => t('pay', { n }));
+const card = (c, style = prefs.style) => cardHTML(c, style, n => t('pay', { n }));
 
 // ---------------------------------------------------------------------------
 // Stato dell'app
@@ -58,7 +58,7 @@ function banner(text) { const b = $('#banner'); b.hidden = !text; b.textContent 
 function cardEl(card, { back = false } = {}) {
   const d = document.createElement('div');
   d.className = 'card';
-  d.innerHTML = back ? backSVG() : cardSVG(card, prefs.style, n => t('pay', { n }));
+  d.innerHTML = back ? backHTML(prefs.style) : cardHTML(card, prefs.style, n => t('pay', { n }));
   if (!back) { d.dataset.id = card.id; d.setAttribute('aria-label', cardLabel(card)); }
   return d;
 }
@@ -69,9 +69,13 @@ function cardEl(card, { back = false } = {}) {
 function renderHero() {
   const fan = $('#hero-fan');
   fan.innerHTML = '';
-  const cards = [{ s: 'B', r: 3 }, { s: 'D', r: 2 }, { s: 'C', r: 1 }];
-  const rots = [-20, -7, 6, 19];
-  [...cards, null].forEach((c, i) => {
+  // Dorso sotto e figure sopra: nel ventaglio si vede soprattutto il lato
+  // sinistro delle carte, e le napoletane non hanno numeri negli angoli.
+  const cards = prefs.style === 'moderno'
+    ? [null, { s: 'B', r: 3 }, { s: 'D', r: 2 }, { s: 'C', r: 1 }]
+    : [null, { s: 'C', r: 1 }, { s: 'D', r: 9 }, { s: 'S', r: 10 }];
+  const rots = [-24, -8, 8, 24];
+  cards.forEach((c, i) => {
     const el = cardEl(c || {}, { back: !c });
     el.style.transform = `translateX(-50%) rotate(${rots[i]}deg)`;
     el.style.animationDelay = `${i * 90}ms`;
@@ -663,7 +667,7 @@ function renderEnd() {
   const winner = v.winner != null ? playerName(v.winner) : '';
   let art = '', title = '', sub = '';
   if (v.draw) {
-    art = `<div class="trophy" style="position:relative;height:150px">${[0, 1, 2].map(k => `<div class="card" style="transform:translateX(-50%) rotate(${k * 120}deg)">${backSVG()}</div>`).join('')}</div>`;
+    art = `<div class="trophy" style="position:relative;height:150px">${[0, 1, 2].map(k => `<div class="card" style="transform:translateX(-50%) rotate(${k * 120}deg)">${backHTML(prefs.style)}</div>`).join('')}</div>`;
     title = t('end.drawT');
     sub = t('end.drawS');
   } else if (won) {
@@ -763,15 +767,15 @@ $('#sheet').addEventListener('click', e => {
   if (b.dataset.emoji) { session?.send({ t: 'emoji', e: b.dataset.emoji }); closeSheet(); }
   if (b.dataset.style) {
     prefs.style = b.dataset.style; savePrefs();
+    preloadDeck(prefs.style);
     $('#sheet').innerHTML = menuHTML();
-    renderHero(); if (game) { $('#pile').innerHTML = ''; renderPile(); }
+    $('#my-stack').innerHTML = '';
+    renderHero(); if (game) { $('#pile').innerHTML = ''; renderPile(); renderMe(); }
   }
   if (b.dataset.lang) { changeLang(b.dataset.lang); $('#sheet').innerHTML = menuHTML(); }
   if (b.dataset.pref) {
     prefs[b.dataset.pref] = !prefs[b.dataset.pref]; savePrefs();
     setSound(prefs.sound); setVibrate(prefs.vibrate);
-setLang(detectLang(prefs.lang));
-const card = (c, style = prefs.style) => cardSVG(c, style, n => t('pay', { n }));
     b.setAttribute('aria-checked', prefs[b.dataset.pref]);
     if (b.dataset.pref === 'sound' && prefs.sound) { unlock(); sfx('pop'); }
   }
@@ -820,6 +824,7 @@ function changeLang(l) {
 // ---------------------------------------------------------------------------
 function init() {
   installSprite();
+  preloadDeck(prefs.style);
   applyStatic();
   document.querySelectorAll('.lang-switch [data-lang]').forEach(b => {
     b.setAttribute('aria-pressed', b.dataset.lang === getLang());

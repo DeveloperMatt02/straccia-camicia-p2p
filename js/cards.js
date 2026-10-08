@@ -1,11 +1,42 @@
-// Carte disegnate in SVG: tre stili (napoletano, piacentino, moderno) e il dorso
-// "a camicia". Tutto vettoriale, nitido su qualsiasi schermo.
+// Le carte del gioco.
+// - Napoletane e piacentine: immagini di mazzi veri, da Wikimedia Commons
+//   (pubblico dominio, vedi carte/CREDITI.md), con il loro dorso.
+// - Moderne: disegnate qui in SVG, con indici grandi e l'etichetta "paga N".
+// Il dorso "a camicia" disegnato in SVG resta per lo stile moderno e per la
+// camicia stracciata di fine partita.
 
 export const STYLES = {
   napoletano: { label: 'Napoletane' },
   piacentino: { label: 'Piacentine' },
   moderno: { label: 'Moderne' },
 };
+
+export const PHOTO_DECKS = { napoletano: 'carte/napoletane', piacentino: 'carte/piacentine' };
+const BACK_IMG = 'carte/dorso.webp';
+const SUITS = ['D', 'C', 'B', 'S'];
+
+/** Faccia della carta come HTML: immagine vera o SVG disegnato. */
+export function cardHTML(card, style = 'napoletano', payLabel) {
+  const dir = PHOTO_DECKS[style];
+  if (dir) return `<img src="${dir}/${card.s}${card.r}.webp" alt="" draggable="false" decoding="async">`;
+  return cardSVG(card, style, payLabel);
+}
+
+/** Dorso della carta come HTML, nello stile scelto. */
+export function backHTML(style = 'napoletano') {
+  return PHOTO_DECKS[style] ? `<img src="${BACK_IMG}" alt="" draggable="false" decoding="async">` : backSVG();
+}
+
+/** Scarica in anticipo le 40 carte e il dorso, così durante la partita compaiono subito. */
+const preloaded = new Set();
+export function preloadDeck(style) {
+  const dir = PHOTO_DECKS[style];
+  if (!dir || preloaded.has(style)) return;
+  preloaded.add(style);
+  const srcs = [BACK_IMG];
+  for (const s of SUITS) for (let r = 1; r <= 10; r++) srcs.push(`${dir}/${s}${r}.webp`);
+  for (const src of srcs) { const im = new Image(); im.decoding = 'async'; im.src = src; }
+}
 
 const W = 180, H = 300;
 
