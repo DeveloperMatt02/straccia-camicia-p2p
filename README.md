@@ -88,7 +88,15 @@ Da sapere:
 
 ## Se qualcuno non riesce a entrare
 
-Su Wi-Fi di casa e 4G/5G funziona quasi sempre. Alcune reti (certe reti universitarie o aziendali) bloccano i collegamenti diretti tra dispositivi. In quel caso passate ai dati mobili, oppure aggiungete un server TURN gratuito: si crea un account su [metered.ca](https://www.metered.ca/stun-turn) e si incollano le credenziali in [`js/config.js`](js/config.js), come spiegato nel commento in cima al file.
+I dispositivi provano prima a collegarsi direttamente. Molte reti però lo bloccano: quasi tutte le reti mobili 4G/5G italiane (sono dietro un NAT condiviso) e alcuni Wi-Fi universitari o aziendali. Se entrambi siete su rete mobile, di solito serve un server TURN, un "ponte" che fa passare i dati quando il collegamento diretto non riesce.
+
+Per attivarlo gratis con [Open Relay di Metered](https://www.metered.ca/tools/openrelay/) (20 GB al mese, molto più di quanto serve: una partita scambia pochi kilobyte):
+
+1. Crea un account gratuito su [metered.ca](https://www.metered.ca/tools/openrelay/).
+2. Nella dashboard, nella sezione del server TURN, copia l'indirizzo per le credenziali, del tipo `https://NOMEAPP.metered.live/api/v1/turn/credentials?apiKey=…`.
+3. Incollalo in [`js/config.js`](js/config.js) nella riga `TURN_CREDENTIALS_URL`, salva e pubblica.
+
+La chiave finisce nel sito pubblico: al massimo qualcuno potrebbe consumare i tuoi 20 GB gratuiti. Se il servizio non risponde, il gioco prova comunque il collegamento diretto.
 
 ## Com'è fatto
 

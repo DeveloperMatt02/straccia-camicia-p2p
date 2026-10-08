@@ -70,7 +70,7 @@ Controls: tap your pile to turn a card, the hand button to slap. On a computer, 
 
 Good to know: the table lives on the device of whoever created the room, so they need to keep the page open. If someone else drops out, their cards keep playing on their own, and reopening the same link puts them back in their seat.
 
-If someone can't join, their network may be blocking direct connections (some university or office networks do). Switch to mobile data, or add a free TURN server in [`js/config.js`](js/config.js) as explained at the top of that file.
+If someone can't join, their network is blocking direct connections. Most Italian 4G/5G mobile networks do (they sit behind shared NAT), as do some university or office Wi-Fi networks. The fix is a TURN relay: create a free account on [Metered's Open Relay](https://www.metered.ca/tools/openrelay/) (20 GB a month, far more than a card game needs), copy the credentials URL (`https://APPNAME.metered.live/api/v1/turn/credentials?apiKey=…`) and paste it into `TURN_CREDENTIALS_URL` in [`js/config.js`](js/config.js).
 
 ## Host your own copy
 

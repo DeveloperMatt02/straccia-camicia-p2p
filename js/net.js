@@ -2,7 +2,7 @@
 // tavolo; gli altri si collegano a lui con PeerJS (WebRTC, gratuito, senza server
 // da pagare). Espone a tutti la stessa interfaccia: session.send(msg) e on(msg).
 import { Room } from './room.js';
-import { ICE_SERVERS, ROOM_PREFIX } from './config.js';
+import { ICE_SERVERS, TURN_CREDENTIALS_URL, ROOM_PREFIX } from './config.js';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 export function randomCode(n = 4) {
@@ -25,8 +25,32 @@ export function myCid() {
   } catch { return randomId(); }
 }
 
+// Server STUN fissi + server TURN chiesti al servizio configurato (se c'è).
+// Se il servizio non risponde in pochi secondi si gioca lo stesso, solo con STUN.
+let iceServers = ICE_SERVERS;
+let iceReady = null;
+export function loadIceServers(url = TURN_CREDENTIALS_URL, fetchImpl = globalThis.fetch) {
+  if (!url) return Promise.resolve(ICE_SERVERS);
+  if (iceReady) return iceReady;
+  iceReady = (async () => {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 5000);
+      const r = await fetchImpl(url, { signal: ctrl.signal });
+      clearTimeout(timer);
+      const extra = r.ok ? await r.json() : null;
+      if (Array.isArray(extra) && extra.length) iceServers = [...ICE_SERVERS, ...extra];
+    } catch {
+      iceReady = null; // riprovo alla prossima stanza
+    }
+    return iceServers;
+  })();
+  return iceReady;
+}
+export const hasTurn = () => iceServers.some(s => String(s.urls).includes('turn'));
+
 function peerOptions() {
-  return { debug: 1, config: { iceServers: ICE_SERVERS } };
+  return { debug: 1, config: { iceServers } };
 }
 
 // Errori come codici: l'interfaccia li traduce nella lingua di chi gioca.

@@ -1,6 +1,6 @@
 // Interfaccia di Straccia Camicia: schermate, tavolo, animazioni e comandi.
 import { installSprite, cardHTML, backHTML, backSVG, preloadDeck, STYLES } from './cards.js';
-import { createHost, joinRoom, createPractice, normalizeCode } from './net.js';
+import { createHost, joinRoom, createPractice, normalizeCode, loadIceServers } from './net.js';
 import { sfx, unlock, setSound, setVibrate } from './audio.js';
 import { payValue } from './engine.js';
 import { t, nCards, cardLabel, setLang, getLang, detectLang, applyStatic, LANGS } from './i18n.js';
@@ -115,6 +115,7 @@ async function doCreate() {
   setBusy(true, t('home.opening'));
   try {
     await loadPeer();
+    await loadIceServers();
     session = await createHost({ name, onMessage, onStatus });
     myCid = session.cid;
     window.__scSession = session; // utile per i test automatici
@@ -131,6 +132,7 @@ async function doJoin(code) {
   setBusy(true, t('home.joining', { code }));
   try {
     await loadPeer();
+    await loadIceServers();
     session = await joinRoom({ code, name, onMessage, onStatus });
     myCid = session.cid;
     try { sessionStorage.setItem('sc-joined', code); } catch {}

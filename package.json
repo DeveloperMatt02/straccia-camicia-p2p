@@ -6,8 +6,15 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "test": "node tests/engine.test.mjs && node tests/room.test.mjs",
+    "test": "node tests/engine.test.mjs && node tests/room.test.mjs && node tests/net.test.mjs",
     "start": "python3 -m http.server 8000"
   },
-  "keywords": ["card-game", "straccia-camicia", "beggar-my-neighbour", "peer-to-peer", "webrtc", "peerjs"]
+  "keywords": [
+    "card-game",
+    "straccia-camicia",
+    "beggar-my-neighbour",
+    "peer-to-peer",
+    "webrtc",
+    "peerjs"
+  ]
 }
