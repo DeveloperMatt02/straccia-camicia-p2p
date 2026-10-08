@@ -90,16 +90,6 @@ Da sapere:
 
 Su Wi-Fi di casa e 4G/5G funziona quasi sempre. Alcune reti (certe reti universitarie o aziendali) bloccano i collegamenti diretti tra dispositivi. In quel caso passate ai dati mobili, oppure aggiungete un server TURN gratuito: si crea un account su [metered.ca](https://www.metered.ca/stun-turn) e si incollano le credenziali in [`js/config.js`](js/config.js), come spiegato nel commento in cima al file.
 
-## Pubblicare la tua copia
-
-Il gioco è un sito statico: niente build, niente dipendenze da installare.
-
-1. Fai un fork del repository (o carica i file in un repository tuo, pubblico).
-2. Vai su **Settings → Pages**, scegli **Deploy from a branch**, branch **main**, cartella **/ (root)** e salva.
-3. Dopo un paio di minuti il gioco è online su `https://TUO-NOME-UTENTE.github.io/NOME-REPOSITORY/`.
-
-Per provarlo sul tuo computer basta un server statico qualsiasi nella cartella del progetto, per esempio `python3 -m http.server`, e poi aprire `http://localhost:8000`.
-
 ## Com'è fatto
 
 JavaScript puro, senza framework né passaggi di build. Le carte sono disegnate in SVG, i suoni sono sintetizzati al volo.
