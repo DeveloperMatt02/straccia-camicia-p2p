@@ -1,0 +1,17 @@
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Strumenti
+node_modules/
+__pycache__/
+*.pyc
+
+# Screenshot generati dai test
+tests/output/

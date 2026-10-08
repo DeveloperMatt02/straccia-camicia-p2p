@@ -1,0 +1,15 @@
+{
+  "name": "Straccia Camicia",
+  "short_name": "Straccia",
+  "description": "Il gioco di carte italiano, online con gli amici.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#3E1013",
+  "theme_color": "#3E1013",
+  "lang": "it",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

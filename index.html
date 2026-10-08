@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#3E1013">
+  <meta name="description" content="Straccia Camicia online: il gioco di carte italiano da giocare con gli amici, ognuno dal suo telefono o PC.">
+  <title>Straccia Camicia</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Bodoni+Moda:ital,opsz,wght@0,6..96,500..800;1,6..96,500..700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <!-- INIZIO -->
+  <section class="screen" id="screen-home" hidden>
+    <div class="home">
+      <div class="lang-switch seg" role="group" data-i18n-aria="home.langAria" aria-label="Lingua">
+        <button type="button" data-lang="it" lang="it">IT</button>
+        <button type="button" data-lang="en" lang="en">EN</button>
+      </div>
+      <div class="hero" aria-hidden="true">
+        <div class="fan" id="hero-fan"></div>
+      </div>
+      <h1 class="title">Straccia<br>Camicia</h1>
+      <p class="lede" data-i18n="home.lede"></p>
+
+      <form class="panel" id="form-name" autocomplete="off">
+        <label class="field">
+          <span data-i18n="home.name"></span>
+          <input id="in-name" maxlength="16" data-i18n-ph="home.namePh" required>
+        </label>
+
+        <div class="join-box" id="join-box" hidden>
+          <label class="field">
+            <span data-i18n="home.code"></span>
+            <input id="in-code" class="code-input" maxlength="4" inputmode="text" autocapitalize="characters" placeholder="ABCD">
+          </label>
+          <button class="btn primary" type="button" id="btn-join-go" data-i18n="home.join"></button>
+          <button class="btn link" type="button" id="btn-join-cancel" data-i18n="home.cancel"></button>
+        </div>
+
+        <div class="home-actions" id="home-actions">
+          <button class="btn primary" type="button" id="btn-create" data-i18n="home.create"></button>
+          <button class="btn" type="button" id="btn-join" data-i18n="home.haveCode"></button>
+        </div>
+        <p class="form-error" id="home-error" role="alert"></p>
+      </form>
+
+      <nav class="home-links">
+        <button class="btn link" type="button" data-open="rules" data-i18n="home.how"></button>
+        <button class="btn link" type="button" id="btn-practice" data-i18n="home.practice"></button>
+      </nav>
+    </div>
+  </section>
+
+  <!-- STANZA -->
+  <section class="screen" id="screen-lobby" hidden>
+    <header class="topbar">
+      <button class="icon-btn" type="button" id="btn-lobby-leave" data-i18n-aria="lobby.leaveAria">
+        <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" /></svg>
+      </button>
+      <span class="topbar-title" data-i18n="lobby.title"></span>
+      <button class="icon-btn" type="button" data-open="menu" data-i18n-aria="lobby.settingsAria">
+        <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+      </button>
+    </header>
+    <div class="lobby">
+      <div class="room-code" id="room-code" data-i18n-aria="lobby.codeAria"></div>
+      <p class="room-hint" id="room-hint"></p>
+      <button class="btn" type="button" id="btn-share" data-i18n="lobby.share"></button>
+
+      <h2 class="section-title"><span class="st" data-i18n="lobby.atTable"></span> <span id="seat-count"></span></h2>
+      <ul class="players" id="lobby-players"></ul>
+
+      <h2 class="section-title" data-i18n="lobby.rules"></h2>
+      <div class="rules-form" id="rules-form"></div>
+
+      <div class="lobby-cta">
+        <button class="btn primary big" type="button" id="btn-start"></button>
+        <p class="wait-note" id="wait-note"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAVOLO -->
+  <section class="screen" id="screen-game" hidden>
+    <header class="topbar game-top">
+      <span class="chip" id="game-code"></span>
+      <span class="chip ghost" id="game-variant"></span>
+      <button class="icon-btn" type="button" data-open="menu" data-i18n-aria="lobby.settingsAria">
+        <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+      </button>
+    </header>
+    <div class="table" id="table">
+      <div class="arc" id="arc"></div>
+      <div class="center">
+        <div class="pile-wrap">
+          <div class="pile" id="pile" aria-live="polite"></div>
+          <div class="pile-count" id="pile-count"></div>
+        </div>
+        <div class="status" id="status" aria-live="polite"></div>
+      </div>
+      <div class="me" id="me">
+        <button class="side-btn" type="button" id="btn-emoji" data-i18n-aria="me.emojiAria">
+          <span aria-hidden="true">😏</span>
+        </button>
+        <button class="my-deck" type="button" id="my-deck" data-i18n-aria="me.deckAria">
+          <span class="stack" id="my-stack"></span>
+          <span class="timer" id="my-timer"><span></span></span>
+        </button>
+        <button class="side-btn slap-btn" type="button" id="btn-slap" data-i18n-aria="me.slapAria">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M17 41c-4-3-9-9-10-13-1-2 1-4 3-3l5 4V10a2.5 2.5 0 015 0v12-15a2.5 2.5 0 015 0v15-13a2.5 2.5 0 015 0v13-9a2.5 2.5 0 015 0v17c0 6-3 11-6 14z"/></svg>
+          <span data-i18n="me.slap"></span>
+        </button>
+        <div class="me-info" id="me-info"></div>
+      </div>
+      <div class="bubbles" id="bubbles"></div>
+    </div>
+  </section>
+
+  <!-- FINE PARTITA -->
+  <div class="overlay" id="overlay-end" hidden>
+    <div class="end-card">
+      <div class="end-art" id="end-art"></div>
+      <h2 class="end-title" id="end-title"></h2>
+      <p class="end-sub" id="end-sub"></p>
+      <h3 class="section-title" data-i18n="end.scores"></h3>
+      <ol class="scores" id="end-scores"></ol>
+      <div class="end-actions" id="end-actions"></div>
+    </div>
+  </div>
+
+  <!-- FOGLI (menu, regole, emoji) -->
+  <div class="sheet-backdrop" id="sheet-backdrop" hidden></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" hidden></div>
+
+  <div class="banner" id="banner" hidden></div>
+  <div class="toast" id="toast" role="status"></div>
+
+  <noscript><p style="padding:2rem;color:#fff">Per giocare serve JavaScript attivo. / JavaScript is required to play.</p></noscript>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "straccia-camicia",
+  "version": "1.0.0",
+  "description": "Straccia Camicia, il gioco di carte italiano online con gli amici: peer-to-peer, gratis, da telefono e PC.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "test": "node tests/engine.test.mjs && node tests/room.test.mjs",
+    "start": "python3 -m http.server 8000"
+  },
+  "keywords": ["card-game", "straccia-camicia", "beggar-my-neighbour", "peer-to-peer", "webrtc", "peerjs"]
+}
