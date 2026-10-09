@@ -32,7 +32,8 @@ Straccia Camicia ("tear the shirt") is the Italian cousin of Beggar-My-Neighbour
 - **Runs anywhere**: phone, tablet and computer, straight from the browser. You can add it to your home screen like an app.
 - **Actually free**: it's a static site on GitHub Pages and the devices talk directly to each other, so there's no server to pay for.
 - **The full rules**, plus regional variants you pick per room.
-- **Real cards**: Neapolitan and Piacentine decks from scans of actual printed decks, plus a modern style with big numbers that reads well on a phone. Everyone picks their own.
+- **Real cards**: Neapolitan and Piacentine decks from scans of actual printed decks, plus a modern style with big numbers that reads well on a phone. Everyone picks their own the first time they open the game and can change it any time, even mid-game.
+- **Avatars**: your name's initial, a hand-drawn icon (moka pot, lucky horn, Vesuvius, the four suits…) or an emoji. Name, deck and avatar are remembered by the browser.
 - **Italian and English**: everyone picks their own language, even in the same game.
 - **Taunts, sound and vibration**, tonight's standings and instant rematches.
 - **Play against the computer** to learn the rules on your own, even offline.
@@ -76,7 +77,7 @@ If someone can't join, their network is blocking direct connections. Most Italia
 
 No build step, no dependencies. Fork the repository, then go to **Settings → Pages**, choose **Deploy from a branch**, branch **main**, folder **/ (root)**, and save. To run it locally, serve the folder with any static server (for example `python3 -m http.server`).
 
-The code is plain JavaScript: rules in [`js/engine.js`](js/engine.js), the room in [`js/room.js`](js/room.js), networking with [PeerJS](https://peerjs.com) in [`js/net.js`](js/net.js), the cards in [`js/cards.js`](js/cards.js) and [`carte/`](carte), translations in [`js/i18n.js`](js/i18n.js). Run the tests with `npm test`.
+The code is plain JavaScript: rules in [`js/engine.js`](js/engine.js), the room in [`js/room.js`](js/room.js), networking with [PeerJS](https://peerjs.com) in [`js/net.js`](js/net.js), the cards in [`js/cards.js`](js/cards.js) and [`carte/`](carte), avatars in [`js/avatars.js`](js/avatars.js), translations in [`js/i18n.js`](js/i18n.js). Run the tests with `npm test`.
 
 ## Credits
 

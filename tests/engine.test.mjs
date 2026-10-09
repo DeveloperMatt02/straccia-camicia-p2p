@@ -1,8 +1,16 @@
 // Test del motore: node tests/engine.test.mjs
 import assert from 'node:assert/strict';
 import {
-  createGame, play, slap, makeRng, totalCards, buildDeck, payValue,
+  createGame, play as rawPlay, slap, resolvePending, makeRng, totalCards, buildDeck, payValue,
 } from '../js/engine.js';
+
+// Nella maggior parte dei test la presa in sospeso si risolve subito, come
+// farebbe la stanza dopo la pausa.
+function play(st, pi) {
+  const r = rawPlay(st, pi);
+  if (r.ok && st.pending) r.events.push(...resolvePending(st).events);
+  return r;
+}
 
 let passed = 0;
 function test(name, fn) {
@@ -131,6 +139,60 @@ test('schiaffo valido anche se nel frattempo è stata giocata un\'altra carta', 
   assert.equal(slap(st, 1, { round: st.round, len }).kind, 'win');
 });
 
+test('fine pagamento: la carta resta visibile e la presa è in sospeso', () => {
+  const st = createGame({ players: P(2), rng: makeRng(13) });
+  setHands(st, [[1, 9], [5, 6]]);
+  rawPlay(st, 0);                      // asso: G1 deve 1
+  const r = rawPlay(st, 1);            // paga con un 5
+  assert.ok(r.events.some(e => e.type === 'reveal' && e.p === 0 && e.reason === 'paid'));
+  assert.ok(!r.events.some(e => e.type === 'collect'));
+  assert.deepEqual(st.pile.map(c => c.r), [1, 5], 'il 5 è ancora sul tavolo');
+  assert.deepEqual(st.pending, { p: 0, reason: 'paid' });
+  assert.equal(rawPlay(st, 1).ok, false, 'durante la pausa non si gioca');
+  assert.equal(rawPlay(st, 0).ok, false);
+  const c = resolvePending(st);
+  assert.ok(c.events.some(e => e.type === 'collect' && e.p === 0 && e.n === 2));
+  assert.equal(st.pending, null);
+  assert.equal(st.turn, 0);
+});
+
+test('durante la pausa uno schiaffo su una coppia batte il creditore', () => {
+  const st = createGame({ players: P(3), rules: { slap: true }, rng: makeRng(14) });
+  setHands(st, [[2, 9], [6, 6, 8], [4, 4]]);
+  rawPlay(st, 0);                      // 2: G1 deve 2
+  rawPlay(st, 1); rawPlay(st, 1);      // 6 e 6: pagamento finito, ma è una coppia
+  assert.deepEqual(st.pending, { p: 0, reason: 'paid' });
+  const r = slap(st, 2, { round: st.round, len: st.pile.length });
+  assert.equal(r.kind, 'win');
+  assert.equal(st.pending, null, 'la presa del creditore è annullata');
+  assert.equal(st.turn, 2);
+  assert.equal(st.players[2].hand.length, 2 + 3);
+  assert.equal(resolvePending(st).ok, false);
+});
+
+test('schiaffo a vuoto durante la pausa: paga e la presa resta al creditore', () => {
+  const st = createGame({ players: P(3), rules: { slap: true }, rng: makeRng(15) });
+  setHands(st, [[1, 9], [5, 6], [4, 8]]);
+  rawPlay(st, 0); rawPlay(st, 1);
+  slap(st, 2, { round: st.round, len: st.pile.length });
+  assert.equal(st.under.length, 1);
+  const c = resolvePending(st);
+  assert.ok(c.events.some(e => e.type === 'collect' && e.p === 0 && e.n === 3));
+});
+
+test('ultima presa della partita: prima si vede la carta, poi si chiude', () => {
+  const st = createGame({ players: P(2), rng: makeRng(16) });
+  setHands(st, [[5], [6, 7]]);
+  rawPlay(st, 0); rawPlay(st, 1);
+  assert.equal(st.phase, 'playing');
+  assert.deepEqual(st.pending, { p: 1, reason: 'final' });
+  assert.equal(st.pile.length, 2);
+  resolvePending(st);
+  assert.equal(st.phase, 'over');
+  assert.equal(st.winner, 1);
+  assert.equal(st.players[1].hand.length, 3);
+});
+
 test('le carte si conservano in 2000 partite casuali (2-6 giocatori, 1-3 mazzi, schiaffi)', () => {
   const rng = makeRng(42);
   let infinite = 0, finished = 0;
@@ -143,8 +205,11 @@ test('le carte si conservano in 2000 partite casuali (2-6 giocatori, 1-3 mazzi, 
       if (slapOn && rng() < 0.05) {
         const who = Math.floor(rng() * n);
         if (!st.players[who].out) slap(st, who, { round: st.round, len: st.pile.length });
+      } else if (st.pending) {
+        assert.equal(rawPlay(st, st.turn).ok, false);
+        assert.equal(resolvePending(st).ok, true);
       } else {
-        assert.equal(play(st, st.turn).ok, true);
+        assert.equal(rawPlay(st, st.turn).ok, true);
       }
       assert.equal(totalCards(st), total);
       steps++;

@@ -29,7 +29,8 @@
     constructor(id, opts) {
       super();
       if (typeof id !== 'string') id = 'anon-' + rid();
-      this.id = id; this.conns = {}; this.destroyed = false; this.disconnected = false;
+      this.id = id; this.conns = {}; this.destroyed = false; this.disconnected = false; this.serverDown = false;
+      (window.__mockPeers ||= []).push(this);
       this.bc = new BroadcastChannel('mock-peerjs');
       this.bc.onmessage = e => this.onMsg(e.data);
       let taken = false;
@@ -65,6 +66,8 @@
       }
     }
     connect(to, opts = {}) {
+      // Come PeerJS: senza server di presentazione non si aprono collegamenti.
+      if (this.disconnected) { this.emit('error', { type: 'disconnected' }); return undefined; }
       const connId = rid();
       const c = new DataConnection(this, to, connId, opts.metadata);
       this.conns[connId] = c;
@@ -74,7 +77,23 @@
       }, 400);
       return c;
     }
-    reconnect() {}
+    // Simula la caduta del server di presentazione (i collegamenti aperti restano vivi).
+    dropServer() {
+      this.serverDown = true;
+      if (this.disconnected) return;
+      this.disconnected = true;
+      this.emit('error', { type: 'network' });
+      this.emit('disconnected', this.id);
+    }
+    serverUp() { this.serverDown = false; }
+    reconnect() {
+      if (!this.disconnected || this.destroyed) return;
+      setTimeout(() => {
+        if (this.destroyed) return;
+        if (this.serverDown) { this.emit('error', { type: 'socket-error' }); this.emit('disconnected', this.id); return; }
+        this.disconnected = false; this.emit('open', this.id); // PeerJS rimanda 'open'
+      }, 50);
+    }
     destroy() {
       if (this.destroyed) return;
       Object.values(this.conns).forEach(c => c.close());

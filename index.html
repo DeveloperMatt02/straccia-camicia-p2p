@@ -16,12 +16,50 @@
   <script type="module" src="js/main.js"></script>
 </head>
 <body>
+  <!-- BENVENUTO (prima apertura) -->
+  <section class="screen" id="screen-welcome" hidden>
+    <form class="home welcome" id="form-welcome" autocomplete="off">
+      <div class="home-top">
+        <div class="lang-switch seg" role="group" data-i18n-aria="home.langAria" aria-label="Lingua">
+          <button type="button" data-lang="it" lang="it">IT</button>
+          <button type="button" data-lang="en" lang="en">EN</button>
+        </div>
+      </div>
+      <h1 class="title welcome-title" data-i18n="welcome.title"></h1>
+      <p class="lede" data-i18n="welcome.lede"></p>
+
+      <label class="field welcome-step">
+        <span class="step-title"><b>1</b><span data-i18n="welcome.name"></span></span>
+        <input id="in-welcome-name" maxlength="16" data-i18n-ph="home.namePh">
+      </label>
+
+      <div class="welcome-step">
+        <span class="step-title"><b>2</b><span data-i18n="welcome.deck"></span></span>
+        <div class="style-pick big" id="welcome-styles"></div>
+        <p class="step-note" data-i18n="welcome.deckNote"></p>
+      </div>
+
+      <div class="welcome-step">
+        <span class="step-title"><b>3</b><span data-i18n="welcome.avatar"></span></span>
+        <div id="welcome-avatars"></div>
+      </div>
+
+      <p class="form-error" id="welcome-error" role="alert"></p>
+      <button class="btn primary big" type="submit" id="btn-welcome-go" data-i18n="welcome.go"></button>
+    </form>
+  </section>
+
   <!-- INIZIO -->
   <section class="screen" id="screen-home" hidden>
     <div class="home">
-      <div class="lang-switch seg" role="group" data-i18n-aria="home.langAria" aria-label="Lingua">
-        <button type="button" data-lang="it" lang="it">IT</button>
-        <button type="button" data-lang="en" lang="en">EN</button>
+      <div class="home-top">
+        <div class="lang-switch seg" role="group" data-i18n-aria="home.langAria" aria-label="Lingua">
+          <button type="button" data-lang="it" lang="it">IT</button>
+          <button type="button" data-lang="en" lang="en">EN</button>
+        </div>
+        <button class="icon-btn" type="button" data-open="menu" data-i18n-aria="lobby.settingsAria">
+          <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+        </button>
       </div>
       <div class="hero" aria-hidden="true">
         <div class="fan" id="hero-fan"></div>
@@ -30,10 +68,13 @@
       <p class="lede" data-i18n="home.lede"></p>
 
       <form class="panel" id="form-name" autocomplete="off">
-        <label class="field">
-          <span data-i18n="home.name"></span>
-          <input id="in-name" maxlength="16" data-i18n-ph="home.namePh" required>
-        </label>
+        <div class="field">
+          <label for="in-name" data-i18n="home.name"></label>
+          <div class="name-row">
+            <button class="avatar-btn" type="button" id="btn-avatar" data-open="avatar" data-i18n-aria="avatar.change"></button>
+            <input id="in-name" maxlength="16" data-i18n-ph="home.namePh" required>
+          </div>
+        </div>
 
         <div class="join-box" id="join-box" hidden>
           <label class="field">

@@ -139,6 +139,70 @@ await test('schiaffo a vuoto paga una carta', async () => {
   assert.equal(g.under.length, 1);
 });
 
+await test('avatar: si sceglie entrando, si cambia anche in partita, valori strani ignorati', async () => {
+  const { room, inbox } = setup(0);
+  room.handle('a', { t: 'hello', name: 'Ada', avatar: 'svg:moka' });
+  room.handle('b', { t: 'hello', name: 'Bea', avatar: 'emoji:🐱' });
+  room.handle('c', { t: 'hello', name: 'Cic', avatar: '<img src=x onerror=alert(1)>' });
+  room.handle('d', { t: 'hello', name: 'Dan' });
+  const av = () => last(inbox, 'a', 'lobby').members.map(m => m.avatar);
+  assert.deepEqual(av(), ['svg:moka', 'emoji:🐱', '', '']);
+  room.handle('a', { t: 'start' });
+  room.handle('d', { t: 'profile', avatar: 'svg:gatto' });
+  room.handle('b', { t: 'profile', avatar: 'emoji:' + 'x'.repeat(30) });
+  assert.deepEqual(av(), ['svg:moka', '', '', 'svg:gatto']);
+});
+
+await test('fine pagamento: tutti vedono l\'ultima carta, poi il creditore prende', async () => {
+  const { room, clock, inbox } = setup(2);
+  room.handle('c0', { t: 'start' });
+  await clock.advance(2000);
+  const g = room.game;
+  const C = (r, s) => ({ id: s + r, s, r });
+  const a = g.turn, b = 1 - a;
+  g.players[a].hand = [C(1, 'C'), C(9, 'C')];
+  g.players[b].hand = [C(5, 'D'), C(6, 'D')];
+  room.handle(room.seats[a], { t: 'play' });          // asso: b deve 1
+  await clock.advance(10);
+  room.handle(room.seats[b], { t: 'play' });          // paga con il 5
+  await clock.advance(10);
+  let st = last(inbox, 'c0', 'state');
+  assert.deepEqual(st.view.pile.map(c => c.r), [1, 5], 'il 5 si vede sul tavolo');
+  assert.ok(st.events.some(e => e.type === 'reveal'));
+  assert.ok(!st.events.some(e => e.type === 'collect'));
+  room.handle(room.seats[b], { t: 'play' });          // durante la pausa non si gioca
+  room.handle(room.seats[a], { t: 'play' });
+  await clock.advance(500);
+  assert.equal(g.pile.length, 2);
+  await clock.advance(600);
+  st = last(inbox, 'c0', 'state');
+  assert.ok(st.events.some(e => e.type === 'collect' && e.p === a && e.n === 2));
+  assert.equal(st.view.pile.length, 0);
+  assert.equal(g.turn, a);
+});
+
+await test('durante la pausa lo schiaffo su una coppia vince sul creditore', async () => {
+  const { room, clock } = setup(3);
+  room.handle('c0', { t: 'start' });
+  await clock.advance(2000);
+  const g = room.game;
+  const C = (r, s) => ({ id: s + r, s, r });
+  const a = g.turn, b = (a + 1) % 3, c = (a + 2) % 3;
+  g.players[a].hand = [C(2, 'C'), C(9, 'C')];
+  g.players[b].hand = [C(6, 'D'), C(6, 'S'), C(8, 'D')];
+  g.players[c].hand = [C(4, 'B'), C(4, 'C')];
+  room.handle(room.seats[a], { t: 'play' }); await clock.advance(10);
+  room.handle(room.seats[b], { t: 'play' }); await clock.advance(10);
+  room.handle(room.seats[b], { t: 'play' }); await clock.advance(10);
+  assert.ok(g.pending);
+  await clock.advance(800);                             // schiaffo all'ultimo istante
+  room.handle(room.seats[c], { t: 'slap', round: g.round, len: g.pile.length, rt: 700 });
+  await clock.advance(1000);
+  assert.equal(g.turn, c);
+  assert.equal(g.players[c].hand.length, 2 + 3);
+  assert.equal(g.players[a].hand.length, 1);
+});
+
 await test('fine partita: classifica, rivincita col mazziere successivo', async () => {
   const { room, clock, inbox } = setup(3, 7);
   room.handle('c0', { t: 'start' });

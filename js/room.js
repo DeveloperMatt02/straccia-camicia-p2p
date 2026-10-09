@@ -1,14 +1,23 @@
 // La stanza: gira sul dispositivo di chi la crea (host) ed è l'arbitro della partita.
 // Non conosce la rete: riceve messaggi con handle(cid, msg) e risponde con send/broadcast.
-import { createGame, play, slap, publicView, makeRng } from './engine.js';
+import { createGame, play, slap, resolvePending, publicView, makeRng } from './engine.js';
 
 export const MAX_PLAYERS = 6;
 export const TIMER_OPTIONS = [0, 6, 2.5];      // secondi: nessuno, normale, calabrese
 const SLAP_WINDOW = 250;                       // ms per raccogliere schiaffi quasi simultanei
 const COLLECT_PAUSE = 1100;                    // ms di pausa dopo una presa
+export const REVEAL_PAUSE = 1000;              // ms in cui resta visibile l'ultima carta prima della presa
 const DISCONNECTED_AUTOPLAY = 1300;            // ms prima di giocare al posto di chi è disconnesso
 const DEFAULT_SETTINGS = { slap: true, timer: 0, decks: 1, penitence: true };
 
+// Avatar: '' = iniziale del nome, 'svg:<nome>' = disegno, 'emoji:<emoji>'.
+// La stanza controlla solo la forma: ogni schermo sa come disegnarlo.
+export function cleanAvatar(a) {
+  a = typeof a === 'string' ? a : '';
+  if (/^svg:[a-z0-9-]{1,20}$/.test(a)) return a;
+  if (/^emoji:\S{1,12}$/u.test(a) && [...a.slice(6)].length <= 6) return a;
+  return '';
+}
 export class Room {
   constructor({ hostCid, send, broadcast, timers = globalThis, now = () => Date.now(), seed }) {
     this.hostCid = hostCid;
@@ -29,6 +38,7 @@ export class Room {
     this.turnDeadline = 0;
     this.slapBuffer = [];
     this.slapTimer = null;
+    this.pendingTimer = null;
     this.lastEvents = [];
   }
 
@@ -38,10 +48,11 @@ export class Room {
     if (m) m.lastSeen = this.now();
     switch (msg.t) {
       case 'hello': return this.onHello(cid, msg);
+      case 'profile': return this.onProfile(cid, msg);
       case 'pong': return;
       case 'settings': if (cid === this.hostCid && !this.inGame()) this.onSettings(msg.settings); return;
       case 'start': if (cid === this.hostCid) this.startGame(); return;
-      case 'toLobby': if (cid === this.hostCid && this.game?.phase === 'over') { this.game = null; this.pushLobby(); } return;
+      case 'toLobby': if (cid === this.hostCid && this.game?.phase === 'over') { this.game = null; this.clearPendingTimer(); this.pushLobby(); } return;
       case 'kick': if (cid === this.hostCid && msg.cid !== this.hostCid && !this.inGame()) this.removeMember(msg.cid, 'kicked'); return;
       case 'play': return this.onPlay(cid);
       case 'slap': return this.onSlap(cid, msg);
@@ -52,11 +63,13 @@ export class Room {
 
   inGame() { return !!this.game && this.game.phase === 'playing'; }
 
-  onHello(cid, { name }) {
+  onHello(cid, { name, avatar }) {
+    avatar = cleanAvatar(avatar);
     name = String(name || 'Giocatore').trim().slice(0, 16) || 'Giocatore';
     let m = this.members.get(cid);
     if (m) {
       if (!this.inGame()) m.name = name;
+      m.avatar = avatar;
       this.setConnected(cid, true);
     } else {
       if (this.order.length >= MAX_PLAYERS) {
@@ -67,7 +80,7 @@ export class Room {
       const taken = new Set([...this.members.values()].map(x => x.name.toLowerCase()));
       let base = name, k = 2;
       while (taken.has(name.toLowerCase())) name = `${base} ${k++}`;
-      m = { cid, name, connected: true, lastSeen: this.now(), joinedAt: this.now() };
+      m = { cid, name, avatar, connected: true, lastSeen: this.now(), joinedAt: this.now() };
       this.members.set(cid, m);
       this.order.push(cid);
       this.scores[cid] ??= 0;
@@ -75,6 +88,16 @@ export class Room {
     this.send(cid, { t: 'welcome', you: cid, host: this.hostCid });
     this.pushLobby();
     if (this.game) this.sendState(cid);
+  }
+
+  // L'avatar si può cambiare in qualsiasi momento, anche durante la partita.
+  onProfile(cid, { avatar }) {
+    const m = this.members.get(cid);
+    if (!m) return;
+    avatar = cleanAvatar(avatar);
+    if (m.avatar === avatar) return;
+    m.avatar = avatar;
+    this.pushLobby();
   }
 
   onSettings(s = {}) {
@@ -122,6 +145,7 @@ export class Room {
       return;
     }
     this.seats = cids;
+    this.clearPendingTimer();
     const dealer = this.gamesPlayed % cids.length; // a ogni partita serve il successivo
     this.game = createGame({
       players: cids.map(c => ({ id: c, name: this.members.get(c).name })),
@@ -190,6 +214,13 @@ export class Room {
   afterEvents(events) {
     const g = this.game;
     if (events.some(e => e.type === 'collect')) this.lockUntil = this.now() + COLLECT_PAUSE;
+    // Presa in sospeso: lascio vedere a tutti l'ultima carta, poi si prende.
+    if (g.pending && g.phase === 'playing') {
+      this.lockUntil = Math.max(this.lockUntil, this.now() + REVEAL_PAUSE);
+      if (!this.pendingTimer) this.pendingTimer = this.t.setTimeout(() => this.onPendingDue(g), REVEAL_PAUSE);
+    } else {
+      this.clearPendingTimer();
+    }
     if (g.phase === 'over') {
       if (g.winner != null) {
         const w = this.seats[g.winner];
@@ -204,6 +235,20 @@ export class Room {
     this.scheduleTurn();
   }
 
+  onPendingDue(g) {
+    this.pendingTimer = null;
+    if (this.game !== g || !g.pending || g.phase !== 'playing') return;
+    // Se c'è uno schiaffo in arrivo, prima si decide quello.
+    if (this.slapTimer) { this.pendingTimer = this.t.setTimeout(() => this.onPendingDue(g), 60); return; }
+    const r = resolvePending(g);
+    if (r.ok) this.afterEvents(r.events);
+  }
+
+  clearPendingTimer() {
+    if (this.pendingTimer) this.t.clearTimeout(this.pendingTimer);
+    this.pendingTimer = null;
+  }
+
   clearTurnTimer() {
     if (this.turnTimer) this.t.clearTimeout(this.turnTimer);
     this.turnTimer = null; this.turnDeadline = 0;
@@ -213,7 +258,7 @@ export class Room {
   scheduleTurn() {
     this.clearTurnTimer();
     const g = this.game;
-    if (!g || g.phase !== 'playing') return;
+    if (!g || g.phase !== 'playing' || g.pending) return;
     const cid = this.seats[g.turn];
     const m = this.members.get(cid);
     const wait = Math.max(0, this.lockUntil - this.now());
@@ -247,7 +292,7 @@ export class Room {
       host: this.hostCid,
       members: this.order.map(c => {
         const m = this.members.get(c);
-        return { cid: c, name: m.name, connected: m.connected, wins: this.scores[c] || 0 };
+        return { cid: c, name: m.name, avatar: m.avatar || '', connected: m.connected, wins: this.scores[c] || 0 };
       }),
       settings: this.settings,
       inGame: this.inGame(),

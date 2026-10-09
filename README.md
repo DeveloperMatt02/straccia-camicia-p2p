@@ -38,7 +38,8 @@ Straccia Camicia (o scamicia, cavacamisa, tras in camisa, pela gallina, a second
 - **Gira su tutto**: telefono, tablet e PC, direttamente dal browser. Si può aggiungere alla schermata Home come un'app.
 - **Gratis davvero**: è un sito statico su GitHub Pages; i dispositivi si parlano direttamente tra loro, quindi non c'è nessun server da pagare.
 - **Tutte le regole**, più le varianti regionali da scegliere per ogni stanza.
-- **Carte vere**: napoletane e piacentine dalle scansioni di mazzi reali, più uno stile moderno con i numeri grandi, comodo sul telefono. Ognuno sceglie il suo.
+- **Carte vere**: napoletane e piacentine dalle scansioni di mazzi reali, più uno stile moderno con i numeri grandi, comodo sul telefono. Ognuno sceglie il suo alla prima apertura e lo cambia quando vuole, anche a partita in corso.
+- **Avatar**: l'iniziale del nome, un disegno fatto apposta (moka, cornetto, Vesuvio, i quattro semi…) o un'emoji. Nome, mazzo e avatar restano salvati nel browser.
 - **Italiano e inglese**: ognuno sceglie la sua lingua, anche nella stessa partita.
 - **Sfottò, suoni e vibrazione**, classifica della serata e rivincita al volo.
 - **Prova contro il computer** per imparare le regole da soli, anche senza internet.
@@ -108,6 +109,7 @@ JavaScript puro, senza framework né passaggi di build. Napoletane e piacentine 
 | [`js/room.js`](js/room.js) | La stanza: turni, timer, schiaffi, classifica (gira su chi crea la stanza) |
 | [`js/net.js`](js/net.js) | Il collegamento tra i dispositivi con [PeerJS](https://peerjs.com) (WebRTC) |
 | [`js/cards.js`](js/cards.js) | Le carte nei tre stili: immagini vere e carte moderne in SVG |
+| [`js/avatars.js`](js/avatars.js) | Gli avatar: disegni in SVG ed emoji |
 | [`js/i18n.js`](js/i18n.js) | I testi in italiano e inglese |
 | [`js/main.js`](js/main.js) | L'interfaccia |
 | [`js/audio.js`](js/audio.js) | Suoni e vibrazione |
@@ -122,7 +124,7 @@ python3 -m http.server 8765 &     # poi, in un altro terminale:
 python3 tests/e2e_multi.py        # partita a 3 dispositivi nel browser (serve Playwright)
 ```
 
-I test delle regole giocano 2000 partite casuali con 2–6 giocatori e 1–3 mazzi controllando che non si perda nessuna carta, e verificano che la partita infinita del 2017 venga riconosciuta. Il test nel browser simula tre telefoni (anche in lingue diverse) che entrano nella stessa stanza, giocano, si mandano sfottò, si schiaffano, si disconnettono e rientrano.
+I test delle regole giocano 2000 partite casuali con 2–6 giocatori e 1–3 mazzi controllando che non si perda nessuna carta, e verificano che la partita infinita del 2017 venga riconosciuta. Il test nel browser simula tre telefoni (anche in lingue diverse) che entrano nella stessa stanza, giocano, si mandano sfottò, si schiaffano, si disconnettono e rientrano, anche quando cade il server di presentazione di PeerJS.
 
 ## Crediti
 

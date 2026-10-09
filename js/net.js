@@ -57,11 +57,52 @@ function peerOptions() {
 const KNOWN = ['nolib', 'peer-unavailable', 'network', 'server-error', 'socket-error', 'socket-closed', 'browser-incompatible', 'webrtc'];
 export function errorCode(type) { return KNOWN.includes(type) ? type : 'generic'; }
 function netError(type) { const e = new Error(errorCode(type)); e.code = errorCode(type); return e; }
+// Errori del server di presentazione: a partita avviata non toccano chi è già al tavolo.
+const SIGNALING_ERRORS = ['network', 'server-error', 'socket-error', 'socket-closed', 'unavailable-id', 'disconnected'];
+export const RECONNECT_NOTICE_DELAY = 5000; // ms prima di avvisare che il server non risponde
+
+/**
+ * Tiene collegato un Peer al server di presentazione di PeerJS.
+ * Quando la linea cade riprova con attese crescenti (1,5 s → 15 s) e avvisa
+ * con onDown() solo se il problema dura più di RECONNECT_NOTICE_DELAY;
+ * onUp() arriva quando il collegamento torna.
+ */
+export function keepSignaling(peer, { onDown, onUp, timers = globalThis, isClosed = () => false }) {
+  let tries = 0, retryTimer = null, noticeTimer = null, noticed = false;
+  const clear = () => { timers.clearTimeout(retryTimer); timers.clearTimeout(noticeTimer); retryTimer = noticeTimer = null; };
+  const attempt = () => {
+    retryTimer = null;
+    if (isClosed() || peer.destroyed || !peer.disconnected) return;
+    try { peer.reconnect(); } catch {}
+  };
+  const schedule = (delay) => {
+    timers.clearTimeout(retryTimer);
+    retryTimer = timers.setTimeout(attempt, delay);
+  };
+  return {
+    down() {
+      if (isClosed()) return;
+      if (!noticeTimer && !noticed) noticeTimer = timers.setTimeout(() => {
+        noticeTimer = null;
+        if (!isClosed() && peer.disconnected) { noticed = true; onDown?.(); }
+      }, RECONNECT_NOTICE_DELAY);
+      schedule(Math.min(15000, 1500 * 2 ** Math.min(tries++, 4)));
+    },
+    up() {
+      const was = noticed;
+      clear(); tries = 0; noticed = false;
+      if (was) onUp?.();
+    },
+    // Tornati sulla pagina (telefono sbloccato): riprovo subito.
+    now() { if (!isClosed() && peer.disconnected && !peer.destroyed) schedule(0); },
+    stop: clear,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Host: crea la stanza e la tiene viva.
 // ---------------------------------------------------------------------------
-export function createHost({ name, onMessage, onStatus, code = randomCode(), attempts = 0 }) {
+export function createHost({ name, avatar = '', onMessage, onStatus, code = randomCode(), attempts = 0 }) {
   return new Promise((resolve, reject) => {
     if (!window.Peer) return reject(netError('nolib'));
     const cid = myCid();
@@ -83,17 +124,29 @@ export function createHost({ name, onMessage, onStatus, code = randomCode(), att
 
     const peer = new window.Peer(ROOM_PREFIX + code, peerOptions());
     let opened = false;
+    // Il server di PeerJS serve solo a far entrare nuovi giocatori: se cade,
+    // la partita continua e io mi ricollego in silenzio.
+    const signaling = keepSignaling(peer, {
+      onDown: () => onStatus?.('reconnecting'),
+      onUp: () => onStatus?.('online'),
+      isClosed: () => closed,
+    });
+    const onVisible = () => { if (document.visibilityState === 'visible') signaling.now(); };
 
     peer.on('open', () => {
+      // Dopo un ricollegamento PeerJS rimanda 'open': la stanza c'è già.
+      if (opened) { signaling.up(); return; }
       opened = true;
-      room.handle(cid, { t: 'hello', name });
+      document.addEventListener('visibilitychange', onVisible);
+      room.handle(cid, { t: 'hello', name, avatar });
       const tick = setInterval(() => { if (!closed) room.tick(); }, 2000);
       const session = {
         code, cid, isHost: true, room,
         send: m => room.handle(cid, m),
         close() {
           if (closed) return;
-          closed = true; clearInterval(tick);
+          closed = true; clearInterval(tick); signaling.stop();
+          document.removeEventListener('visibilitychange', onVisible);
           for (const c of conns.values()) try { c.send({ t: 'closed' }); } catch {}
           setTimeout(() => peer.destroy(), 150);
         },
@@ -122,20 +175,18 @@ export function createHost({ name, onMessage, onStatus, code = randomCode(), att
 
     // Se perdo il server di presentazione, le partite in corso continuano;
     // mi ricollego per far entrare altri giocatori.
-    peer.on('disconnected', () => {
-      if (closed) return;
-      onStatus?.('reconnecting');
-      setTimeout(() => { if (!closed && !peer.destroyed) try { peer.reconnect(); } catch {} }, 1500);
-    });
+    peer.on('disconnected', () => { if (opened) signaling.down(); });
 
     peer.on('error', err => {
       if (!opened && err.type === 'unavailable-id' && attempts < 5) {
         peer.destroy();
-        createHost({ name, onMessage, onStatus, attempts: attempts + 1 }).then(resolve, reject);
+        createHost({ name, avatar, onMessage, onStatus, attempts: attempts + 1 }).then(resolve, reject);
         return;
       }
       if (!opened) { peer.destroy(); reject(netError(err.type)); return; }
-      if (err.type !== 'peer-unavailable') onStatus?.('error', errorCode(err.type));
+      // Problemi del server di presentazione: ci pensa il ricollegamento automatico.
+      if (err.type === 'peer-unavailable' || SIGNALING_ERRORS.includes(err.type)) return;
+      onStatus?.('error', errorCode(err.type));
     });
   });
 }
@@ -143,7 +194,7 @@ export function createHost({ name, onMessage, onStatus, code = randomCode(), att
 // ---------------------------------------------------------------------------
 // Ospite: si collega alla stanza e si ricollega da solo se cade la linea.
 // ---------------------------------------------------------------------------
-export function joinRoom({ code, name, onMessage, onStatus }) {
+export function joinRoom({ code, name, avatar = '', onMessage, onStatus }) {
   return new Promise((resolve, reject) => {
     if (!window.Peer) return reject(netError('nolib'));
     const cid = myCid();
@@ -153,18 +204,23 @@ export function joinRoom({ code, name, onMessage, onStatus }) {
 
     const session = {
       code, cid, isHost: false,
+      avatar, // aggiornato da chi gioca: va rimandato a ogni ricollegamento
       send: m => { if (conn?.open) try { conn.send(m); } catch {} },
       close() {
         if (closed) return;
         closed = true;
-        clearInterval(watch); clearTimeout(retryTimer);
+        clearInterval(watch); clearTimeout(retryTimer); signaling.stop();
         try { conn?.send({ t: 'leave' }); } catch {}
         setTimeout(() => peer.destroy(), 150);
       },
     };
 
     function connect() {
+      // Senza server di presentazione PeerJS non può aprire collegamenti (e
+      // restituirebbe undefined): aspetto che torni, poi 'open' richiama connect.
+      if (peer.disconnected || peer.destroyed) return;
       const c = peer.connect(ROOM_PREFIX + code, { reliable: true, serialization: 'json', metadata: { cid } });
+      if (!c) return;
       conn = c;
       const openTimeout = setTimeout(() => {
         if (!c.open && !settled) fail('webrtc');
@@ -172,7 +228,7 @@ export function joinRoom({ code, name, onMessage, onStatus }) {
       c.on('open', () => {
         clearTimeout(openTimeout);
         tries = 0; retrying = false; lastHeard = Date.now();
-        c.send({ t: 'hello', name, cid });
+        c.send({ t: 'hello', name, avatar: session.avatar, cid });
         onStatus?.('online');
         if (!settled) { settled = true; resolve(session); }
       });
@@ -202,10 +258,12 @@ export function joinRoom({ code, name, onMessage, onStatus }) {
       const retry = () => {
         if (closed) return;
         if (++tries > 30) { onStatus?.('lost'); closed = true; return; }
-        if (peer.disconnected && !peer.destroyed) try { peer.reconnect(); } catch {}
-        try { conn?.close(); } catch {}
-        connect();
+        // Il prossimo tentativo è già in programma: se qualcosa qui va storto
+        // i tentativi non si fermano.
         retryTimer = setTimeout(() => { if (retrying && !closed) retry(); }, 3000);
+        try { conn?.close(); } catch {}
+        if (peer.disconnected && !peer.destroyed) signaling.now();
+        else try { connect(); } catch {}
       };
       retry();
     }
@@ -215,8 +273,17 @@ export function joinRoom({ code, name, onMessage, onStatus }) {
       if (settled && !closed && !retrying && Date.now() - lastHeard > 7000) lost();
     }, 1500);
 
-    peer.on('open', connect);
-    peer.on('disconnected', () => { if (!closed) setTimeout(() => { try { if (!peer.destroyed) peer.reconnect(); } catch {} }, 1000); });
+    // Il server di presentazione serve all'ospite solo per ricollegarsi: riprovo in silenzio.
+    const signaling = keepSignaling(peer, { isClosed: () => closed });
+    let firstOpen = true;
+    peer.on('open', () => {
+      signaling.up();
+      // PeerJS rimanda 'open' a ogni ricollegamento: apro un nuovo collegamento
+      // con l'host solo all'inizio o se quello vecchio è caduto.
+      if (firstOpen) { firstOpen = false; connect(); }
+      else if (retrying && !conn?.open) try { connect(); } catch {}
+    });
+    peer.on('disconnected', () => { if (settled) signaling.down(); });
     peer.on('error', err => {
       if (!settled) fail(err.type);
       else if (err.type === 'peer-unavailable' && retrying) { /* l'host non c'è ancora: riprovo */ }
@@ -228,10 +295,11 @@ export function joinRoom({ code, name, onMessage, onStatus }) {
 // Modalità prova: tutto in locale, con giocatori finti (?prova nell'indirizzo).
 // Utile per vedere il gioco da soli, senza rete.
 // ---------------------------------------------------------------------------
-export function createPractice({ name, bots = 3, onMessage, settings }) {
+export function createPractice({ name, avatar = '', bots = 3, onMessage, settings }) {
   const cid = myCid();
   const botIds = Array.from({ length: bots }, (_, i) => 'bot' + i);
   const botNames = ['Nonna Pina', 'Zio Gino', 'Carmela', 'Totò', 'Ugo'];
+  const BOT_AVATARS = ['svg:moka', 'svg:corno', 'svg:gatto', 'svg:vesuvio', 'svg:limone'];
   const views = {};
   const room = new Room({
     hostCid: cid,
@@ -259,8 +327,8 @@ export function createPractice({ name, bots = 3, onMessage, settings }) {
       setTimeout(() => room.handle(b, { t: 'emoji', e: lines[Math.floor(Math.random() * lines.length)] }), 500);
     }
   }
-  room.handle(cid, { t: 'hello', name });
-  botIds.forEach((b, i) => room.handle(b, { t: 'hello', name: botNames[i] }));
+  room.handle(cid, { t: 'hello', name, avatar });
+  botIds.forEach((b, i) => room.handle(b, { t: 'hello', name: botNames[i], avatar: BOT_AVATARS[i] }));
   if (settings) room.handle(cid, { t: 'settings', settings });
   const tick = setInterval(() => {
     for (const b of botIds) { const m = room.members.get(b); if (m) m.lastSeen = Date.now(); }

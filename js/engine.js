@@ -15,6 +15,12 @@
 //   mazzetto lo prende. Chi batte a vuoto paga 1 carta sotto il mazzetto.
 // - Più mazzi (Super Camicia): 1, 2 o 3 mazzi da 40.
 // - Il ritmo veloce (timer) è gestito dalla stanza, non dal motore.
+//
+// Presa in sospeso: quando un pagamento finisce (o la partita si chiude) la
+// carta appena giocata deve restare visibile prima che il mazzetto sparisca.
+// Per questo play() non fa la presa ma la lascia in `pending`; chi gestisce il
+// tavolo chiama resolvePending() dopo una breve pausa. Nel frattempo nessuno
+// può giocare, ma si può ancora dare lo schiaffo.
 
 export const SUITS = ['C', 'D', 'B', 'S']; // coppe, denari, bastoni, spade
 export const SUIT_NAMES = { C: 'coppe', D: 'denari', B: 'bastoni', S: 'spade' };
@@ -92,6 +98,7 @@ export function createGame({ players, rules = {}, dealer = 0, rng = Math.random,
     turn: (dealer + 1) % n,
     dealer,
     obligation: null,  // { owner, count, remaining }
+    pending: null,     // { p, reason }: presa in sospeso (vedi sopra)
     phase: 'playing',
     winner: null,
     draw: false,
@@ -120,6 +127,7 @@ function finish(st, winner, events) {
   st.phase = 'over';
   st.winner = winner;
   st.obligation = null;
+  st.pending = null;
   events.push({ type: 'win', p: winner });
 }
 
@@ -138,8 +146,26 @@ function advance(st, from, events) {
     st.turn = j;
     return;
   }
-  // Nessun altro può giocare: vince `from`.
-  finish(st, from, events);
+  // Nessun altro può giocare: vince `from` (dopo aver lasciato vedere il mazzetto).
+  if (st.pile.length || st.under.length) defer(st, from, 'final', events);
+  else finish(st, from, events);
+}
+
+// La presa avverrà dopo la pausa: intanto la carta resta sul tavolo.
+function defer(st, j, reason, events) {
+  st.pending = { p: j, reason };
+  events.push({ type: 'reveal', p: j, reason });
+}
+
+/** Esegue la presa in sospeso (da chiamare dopo la pausa). */
+export function resolvePending(st) {
+  const events = [];
+  const pd = st.pending;
+  if (!pd || st.phase !== 'playing') return { ok: false, events };
+  st.pending = null;
+  if (pd.reason === 'final') finish(st, pd.p, events);
+  else collect(st, pd.p, pd.reason, events);
+  return { ok: true, events };
 }
 
 function collect(st, j, reason, events) {
@@ -150,6 +176,7 @@ function collect(st, j, reason, events) {
   st.under = []; st.pile = [];
   st.round++;
   st.obligation = null;
+  st.pending = null;
   p.out = false;
   st.turn = j;
   events.push({ type: 'collect', p: j, n, reason });
@@ -175,6 +202,7 @@ function collect(st, j, reason, events) {
 export function play(st, pi) {
   const events = [];
   if (st.phase !== 'playing') return { ok: false, error: 'La partita è finita', events };
+  if (st.pending) return { ok: false, error: 'Il mazzetto sta per essere preso', events };
   if (st.turn !== pi) return { ok: false, error: 'Non è il tuo turno', events };
   const p = st.players[pi];
   if (!p.hand.length) return { ok: false, error: 'Non hai carte', events };
@@ -193,11 +221,11 @@ export function play(st, pi) {
   } else if (st.obligation) {
     st.obligation.remaining--;
     if (st.obligation.remaining === 0) {
-      collect(st, st.obligation.owner, 'paid', events);
+      defer(st, st.obligation.owner, 'paid', events);
     } else if (!p.hand.length) {
       // Finite le carte durante il pagamento: il mazzetto va al creditore.
       events.push({ type: 'broke', p: pi });
-      collect(st, st.obligation.owner, 'broke', events);
+      defer(st, st.obligation.owner, 'broke', events);
     }
   } else {
     advance(st, pi, events);
@@ -236,8 +264,8 @@ export function slap(st, pi, claim) {
     paid.push(c);
   }
   events.push({ type: 'slap', p: pi, ok: false, paid: paid.length });
-  if (st.turn === pi && !p.hand.length) {
-    if (st.obligation) collect(st, st.obligation.owner, 'broke', events);
+  if (st.turn === pi && !p.hand.length && !st.pending) {
+    if (st.obligation) defer(st, st.obligation.owner, 'broke', events);
     else { p.out = true; events.push({ type: 'out', p: pi }); advance(st, pi, events); }
   }
   return { ok: true, kind: 'wrong', events };
@@ -253,6 +281,7 @@ export function publicView(st) {
     turn: st.turn,
     dealer: st.dealer,
     obligation: st.obligation,
+    pending: st.pending,
     phase: st.phase,
     winner: st.winner,
     draw: st.draw,

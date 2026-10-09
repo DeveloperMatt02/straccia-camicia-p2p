@@ -4,18 +4,21 @@ import { createHost, joinRoom, createPractice, normalizeCode, loadIceServers } f
 import { sfx, unlock, setSound, setVibrate } from './audio.js';
 import { payValue } from './engine.js';
 import { t, nCards, cardLabel, setLang, getLang, detectLang, applyStatic, LANGS } from './i18n.js';
+import { avatarHTML, AVATAR_IDS, AVATAR_EMOJI } from './avatars.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const hash = s => { let h = 2166136261; for (const ch of String(s)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
 const hueOf = name => hash(name) % 360;
 const initial = name => (String(name).trim()[0] || '?').toUpperCase();
+const av = (name, avatar, opts = {}) => avatarHTML({ name, avatar, hue: hueOf(name), ...opts });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ---------------------------------------------------------------------------
-// Preferenze locali
+// Preferenze locali (restano nel browser: localStorage 'sc-prefs')
+// setup = la schermata di benvenuto è già stata completata.
 // ---------------------------------------------------------------------------
-const prefs = Object.assign({ name: '', style: 'napoletano', sound: true, vibrate: true, lang: null },
+const prefs = Object.assign({ name: '', style: 'napoletano', avatar: '', sound: true, vibrate: true, lang: null, setup: false },
   (() => { try { return JSON.parse(localStorage.getItem('sc-prefs') || '{}'); } catch { return {}; } })());
 function savePrefs() { try { localStorage.setItem('sc-prefs', JSON.stringify(prefs)); } catch {} }
 setSound(prefs.sound); setVibrate(prefs.vibrate);
@@ -116,7 +119,7 @@ async function doCreate() {
   try {
     await loadPeer();
     await loadIceServers();
-    session = await createHost({ name, onMessage, onStatus });
+    session = await createHost({ name, avatar: prefs.avatar, onMessage, onStatus });
     myCid = session.cid;
     window.__scSession = session; // utile per i test automatici
     setBusy(false);
@@ -133,7 +136,7 @@ async function doJoin(code) {
   try {
     await loadPeer();
     await loadIceServers();
-    session = await joinRoom({ code, name, onMessage, onStatus });
+    session = await joinRoom({ code, name, avatar: prefs.avatar, onMessage, onStatus });
     myCid = session.cid;
     try { sessionStorage.setItem('sc-joined', code); } catch {}
     history.replaceState(null, '', '?stanza=' + code);
@@ -146,7 +149,7 @@ async function doJoin(code) {
 function doPractice() {
   const name = readName(); if (!name) return;
   unlock();
-  session = createPractice({ name, bots: 3, onMessage });
+  session = createPractice({ name, avatar: prefs.avatar, bots: 3, onMessage });
   myCid = session.cid;
   window.__scPractice = session; // utile per i test automatici
   show('lobby'); renderLobby();
@@ -196,10 +199,12 @@ function onStatus(kind, text) {
 // ---------------------------------------------------------------------------
 const isHost = () => !!lobby && lobby.host === myCid;
 const memberName = cid => lobby?.members.find(m => m.cid === cid)?.name || t('someone');
+const avatarOf = cid => lobby?.members.find(m => m.cid === cid)?.avatar || '';
 
 function onLobby(m) {
   lobby = m;
   renderLobby();
+  if (game && current() === 'game') { renderSeats(); renderMe(); } // avatar cambiati in partita
   if (!m.hasGame) {
     if (game) { game = null; $('#overlay-end').hidden = true; clearTimeout(endTimer); }
     if (current() !== 'lobby') show('lobby');
@@ -222,7 +227,7 @@ function renderLobby() {
   $('#seat-count').textContent = t('lobby.seats', { n: lobby.members.length, max });
   list.innerHTML = lobby.members.map(p => `
     <li class="${p.connected ? '' : 'off'}">
-      <span class="avatar" style="--h:${hueOf(p.name)}">${esc(initial(p.name))}</span>
+      ${av(p.name, p.avatar)}
       <span class="name">${esc(p.name)}${p.cid === myCid ? ` <span class="tag">${t('lobby.you')}</span>` : ''}
         ${p.cid === lobby.host ? ` <span class="tag">${t('lobby.opens')}</span>` : ''}
         ${p.connected ? '' : ` <span class="tag">${t('lobby.offline')}</span>`}</span>
@@ -323,7 +328,10 @@ function onState(m) {
       const name = esc(playerName(e.p));
       const faster = e.beaten?.length ? t('f.faster', { names: e.beaten.map(i => i === myIndex ? t('you.obj') : esc(playerName(i))).join(t('and')) }) : '';
       if (e.ok) { sfx('slap'); stamp(); setFlash(t(me ? 'f.slapMe' : 'f.slap', { name, faster }), 1700); }
-      else { sfx('wrong'); setFlash(t((me ? 'f.wrongMe' : 'f.wrong') + (e.paid ? 'Paid' : ''), { name }), 1500); }
+      else {
+        sfx('wrong'); setFlash(t((me ? 'f.wrongMe' : 'f.wrong') + (e.paid ? 'Paid' : ''), { name }), 1800);
+        if (e.paid) flyUnder(e.p, e.paid);
+      }
     }
     if (e.type === 'out') { sfx('out'); toast(e.p === myIndex ? t('out.me') : t('out.other', { name: playerName(e.p) })); }
     if (e.type === 'broke') setFlash(t('f.brokeEv', { name: esc(playerName(e.p)) }), 1500);
@@ -396,7 +404,9 @@ function renderSeats() {
     const off = !game.connected[i];
     const ob = v.obligation;
     let badge = '';
-    if (v.phase === 'playing') {
+    if (v.phase === 'playing' && v.pending) {
+      if (v.pending.p === i) badge = `<span class="badge owner">${t('seat.takes')}</span>`;
+    } else if (v.phase === 'playing') {
       if (ob && v.turn === i) badge = `<span class="badge">${t('seat.pays', { n: ob.remaining })}</span>`;
       else if (ob && ob.owner === i) badge = `<span class="badge owner">${t('seat.owner')}</span>`;
       else if (off && !p.out) badge = `<span class="badge off">${t('seat.auto')}</span>`;
@@ -406,7 +416,7 @@ function renderSeats() {
     el.classList.toggle('off', off);
     el.style.setProperty('--h', hueOf(p.name));
     el.innerHTML = `
-      <span class="avatar" style="--h:${hueOf(p.name)}">${esc(initial(p.name))}${badge}</span>
+      ${av(p.name, avatarOf(game.seats[i]), { inner: badge })}
       <span class="sname">${esc(p.name)}</span>
       <span class="scount">${p.out && v.winner !== i ? t('seat.out') : `<span class="mini-back"></span>${p.count}`}${v.dealer === i ? ` <span class="dealer">${t('seat.dealer')}</span>` : ''}</span>`;
     el.setAttribute('aria-label', t('seat.aria', { name: p.name, n: p.count }) + (v.turn === i ? t('seat.ariaTurn') : ''));
@@ -440,10 +450,15 @@ function cardTransform(card) {
 function renderPile() {
   const v = game.view, pile = $('#pile');
   const shown = v.pile.slice(-7);
-  const keep = new Map([...pile.querySelectorAll('.card')].map(el => [el.dataset.id, el]));
+  const keep = new Map([...pile.querySelectorAll(':scope > .card')].map(el => [el.dataset.id, el]));
   pile.innerHTML = '';
-  if (!v.pile.length) {
-    pile.innerHTML = `<div class="pile-empty">${v.under ? t('pile.under', { n: v.under }) : ''}</div>`;
+  if (!v.pile.length) pile.innerHTML = '<div class="pile-empty"></div>';
+  // Le carte pagate per gli schiaffi a vuoto spuntano da sotto il mazzetto.
+  if (v.under) {
+    const under = document.createElement('div');
+    under.className = 'under-stack';
+    under.innerHTML = Array.from({ length: Math.min(3, v.under) }, () => `<div class="card">${backHTML(prefs.style)}</div>`).join('');
+    pile.appendChild(under);
   }
   shown.forEach((c, idx) => {
     let el = keep.get(c.id);
@@ -457,7 +472,8 @@ function renderPile() {
     pile.appendChild(el);
   });
   const total = v.pile.length + v.under;
-  $('#pile-count').innerHTML = total ? `<b>${total}</b>${total === 1 ? t('card') : t('cards')}` : '';
+  $('#pile-count').innerHTML = total ? `<b>${total}</b>${total === 1 ? t('card') : t('cards')}` +
+    (v.under ? `<span class="under-n">${t('pile.under', { n: v.under })}</span>` : '') : '';
 }
 
 function rectCenter(el) {
@@ -484,7 +500,7 @@ function flyPileTo(p) {
   const target = seatEl(p);
   if (!target || !pile.children.length || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const b = rectCenter(target);
-  [...pile.querySelectorAll('.card')].slice(-4).forEach((el, i) => {
+  [...pile.querySelectorAll(':scope > .card')].slice(-4).forEach((el, i) => {
     const r = el.getBoundingClientRect();
     const f = el.cloneNode(true);
     f.className = 'card flyer';
@@ -497,6 +513,36 @@ function flyPileTo(p) {
     }));
     setTimeout(() => f.remove(), 700);
   });
+}
+
+// Schiaffo a vuoto: la carta pagata parte da chi ha sbagliato e finisce sotto il mazzetto.
+function flyUnder(p, n = 1) {
+  const src = seatEl(p), under = $('#pile .under-stack');
+  if (!src) return;
+  floatText(src, `−${n}`);
+  if (!under || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const a = rectCenter(src), b = under.getBoundingClientRect();
+  const f = cardEl({}, { back: true });
+  f.classList.add('flyer');
+  Object.assign(f.style, { left: `${b.left}px`, top: `${b.top}px`, width: `${b.width}px`, zIndex: 34,
+    transform: `translate(${a.x - b.left - b.width / 2}px, ${a.y - b.top - b.height / 2}px) scale(.4) rotate(-20deg)` });
+  document.body.appendChild(f);
+  under.classList.remove('bump');
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    f.style.transform = 'translate(-10px, 14px) rotate(-8deg)';
+  }));
+  setTimeout(() => { f.style.opacity = '0'; under.classList.add('bump'); }, 470);
+  setTimeout(() => f.remove(), 950);
+}
+
+function floatText(el, text) {
+  const r = el.getBoundingClientRect();
+  const d = document.createElement('div');
+  d.className = 'float-text';
+  d.textContent = text;
+  Object.assign(d.style, { left: `${r.left + r.width / 2}px`, top: `${r.top}px` });
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 1300);
 }
 
 function animateDeal() {
@@ -538,7 +584,9 @@ function renderStatus() {
   const ob = v.obligation;
   const name = i => i === myIndex ? t('you.obj') : esc(playerName(i));
   let html;
-  if (ob) {
+  if (v.pending) {
+    html = v.pending.p === myIndex ? t('st.takingMe') : t('st.taking', { name: esc(playerName(v.pending.p)) });
+  } else if (ob) {
     const dots = `<span class="debt">${Array.from({ length: ob.count }, (_, k) => `<i class="${k < ob.count - ob.remaining ? 'done' : ''}"></i>`).join('')}</span>`;
     html = v.turn === myIndex
       ? `${t('st.payMe', { n: nCards(ob.remaining), owner: name(ob.owner) })} ${dots}`
@@ -549,7 +597,7 @@ function renderStatus() {
   let sub = '';
   if (myIndex < 0) sub = t('st.watching');
   else if (v.plays === 0) sub = v.dealer === myIndex ? t('st.dealtMe') : t('st.dealtBy', { name: esc(playerName(v.dealer)) });
-  else if (ob && v.turn === myIndex) sub = t('st.payHint');
+  else if (ob && v.turn === myIndex && !v.pending) sub = t('st.payHint');
   st.innerHTML = html + (sub ? `<span class="sub">${sub}</span>` : '');
 }
 
@@ -576,14 +624,14 @@ function renderMe() {
         stack.appendChild(c);
       }
     }
-    const ready = v.phase === 'playing' && v.turn === myIndex && !lockedNow();
+    const ready = v.phase === 'playing' && v.turn === myIndex && !v.pending && !lockedNow();
     deck.classList.toggle('ready', ready);
     deck.classList.toggle('empty', count === 0);
     deck.setAttribute('aria-label', t(ready ? 'me.playAria' : 'me.deckAria'));
   }
   // Timer del turno (ritmo veloce o giocatore disconnesso)
   const timer = $('#my-timer'), bar = timer.firstElementChild;
-  const mine = !spectator && v.phase === 'playing' && v.turn === myIndex && game.deadlineMs > 0;
+  const mine = !spectator && v.phase === 'playing' && v.turn === myIndex && !v.pending && game.deadlineMs > 0;
   timer.classList.toggle('on', mine);
   bar.getAnimations?.().forEach(a => a.cancel());
   if (mine && bar.animate) {
@@ -595,7 +643,7 @@ function renderMe() {
   if (spectator) info = t('me.watching');
   else if (me.out && v.winner !== myIndex) info = t('me.out');
   else if (me.count === 0 && v.phase === 'playing') info = t('me.empty');
-  else info = `<b>${me.count}</b> ${me.count === 1 ? t('card') : t('cards')}${v.dealer === myIndex ? ` <span class="dealer">${t('me.dealt')}</span>` : ''}`;
+  else info = `${av(me.name, avatarOf(myCid))}<b>${me.count}</b> ${me.count === 1 ? t('card') : t('cards')}${v.dealer === myIndex ? ` <span class="dealer">${t('me.dealt')}</span>` : ''}`;
   $('#me-info').innerHTML = info;
 }
 
@@ -606,7 +654,7 @@ function doPlay() {
   if (!game || !session) return;
   unlock();
   const v = game.view;
-  if (myIndex < 0 || v.phase !== 'playing') return;
+  if (myIndex < 0 || v.phase !== 'playing' || v.pending) return;
   if (v.turn !== myIndex) {
     $('#my-deck').animate?.([{ transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'none' }], { duration: 180 });
     const info = $('#me-info');
@@ -682,7 +730,7 @@ function renderEnd() {
     title = t('end.penT');
     sub = t('end.penS', { name: esc(winner) });
   } else {
-    art = `<span class="avatar" style="--h:${hueOf(winner)};width:110px;height:110px;font-size:3rem">${esc(initial(winner))}</span>`;
+    art = av(winner, avatarOf(game.seats[v.winner]), { style: 'width:110px;height:110px;font-size:3rem' });
     title = t('end.winsT', { name: esc(winner) });
     sub = t(myIndex >= 0 ? 'end.loseS' : 'end.watchS');
   }
@@ -691,7 +739,7 @@ function renderEnd() {
   $('#end-sub').innerHTML = sub;
   const members = [...(lobby?.members || [])].sort((a, b) => b.wins - a.wins);
   $('#end-scores').innerHTML = members.map(p => `
-    <li class="${p.cid === myCid ? 'me' : ''}"><span class="avatar" style="--h:${hueOf(p.name)}">${esc(initial(p.name))}</span>
+    <li class="${p.cid === myCid ? 'me' : ''}">${av(p.name, p.avatar)}
     <span class="n">${esc(p.name)}</span><span class="w">${p.wins}</span></li>`).join('');
   $('#end-actions').innerHTML = isHost()
     ? `<button class="btn primary big" type="button" data-act="rematch">${t('end.rematch')}</button>
@@ -718,15 +766,21 @@ function closeSheet() { $('#sheet').hidden = true; $('#sheet-backdrop').hidden =
 $('#sheet-backdrop').addEventListener('click', closeSheet);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
 
+const duo = st => `<span class="duo"><span class="card">${card({ s: 'C', r: 1 }, st)}</span><span class="card">${card({ s: 'D', r: 10 }, st)}</span></span>`;
+const stylePickHTML = () => Object.keys(STYLES).map(k =>
+  `<button type="button" data-style="${k}" aria-pressed="${prefs.style === k}">${duo(k)}${t('style.' + k)}</button>`).join('');
+
 function menuHTML() {
-  const duo = st => `<span class="duo"><span class="card">${card({ s: 'C', r: 1 }, st)}</span><span class="card">${card({ s: 'D', r: 10 }, st)}</span></span>`;
+  const myName = (session && lobby && memberName(myCid)) || nameNow();
   return `<h2>${t('menu.title')}</h2>
+    <div class="menu-me">${av(myName, prefs.avatar)}
+      <div class="who"><b>${esc(myName)}</b><small>${t('avatar.note')}</small></div>
+      <button class="btn" type="button" data-open="avatar">${t('avatar.change')}</button></div>
     <h3>${t('menu.lang')}</h3>
     <div class="seg lang-pick" role="group" aria-label="${t('menu.lang')}">${Object.keys(LANGS).map(l =>
       `<button type="button" data-lang="${l}" lang="${l}" aria-pressed="${getLang() === l}">${LANGS[l]['lang.name']}</button>`).join('')}</div>
     <h3>${t('menu.style')}</h3>
-    <div class="style-pick">${Object.keys(STYLES).map(k =>
-      `<button type="button" data-style="${k}" aria-pressed="${prefs.style === k}">${duo(k)}${t('style.' + k)}</button>`).join('')}</div>
+    <div class="style-pick">${stylePickHTML()}</div>
     <p style="font-size:.88rem;color:var(--muted)">${t('menu.styleNote')}</p>
     <div class="toggle-row"><span>${t('menu.sound')}</span><button type="button" class="switch" role="switch" data-pref="sound" aria-checked="${prefs.sound}" aria-label="${t('menu.sound')}"></button></div>
     <div class="toggle-row"><span>${t('menu.vibrate')}</span><button type="button" class="switch" role="switch" data-pref="vibrate" aria-checked="${prefs.vibrate}" aria-label="${t('menu.vibrate')}"></button></div>
@@ -735,6 +789,80 @@ function menuHTML() {
       ${session ? `<button class="btn link danger" type="button" data-act="leave">${t(session.isHost && !session.practice ? 'menu.close' : 'menu.leave')}</button>` : ''}
     </div>`;
 }
+
+// ---------------------------------------------------------------------------
+// Avatar
+// ---------------------------------------------------------------------------
+const nameNow = () => $('#in-name').value.trim() || prefs.name || '?';
+
+function avatarPickHTML(name = nameNow()) {
+  const btn = (a, label) => `<button type="button" data-avatar="${esc(a)}" aria-pressed="${prefs.avatar === a}" aria-label="${esc(label)}" title="${esc(label)}">${av(name, a)}</button>`;
+  return `<div class="avatar-pick">
+    <h4>${t('avatar.drawings')}</h4>
+    <div class="av-grid">${btn('', t('avatar.initial'))}${AVATAR_IDS.map(id => btn('svg:' + id, t('av.' + id))).join('')}</div>
+    <h4>${t('avatar.emoji')}</h4>
+    <div class="av-grid">${AVATAR_EMOJI.map(e => btn('emoji:' + e, e)).join('')}</div>
+  </div>`;
+}
+
+function avatarSheetHTML() {
+  return `<h2>${t('avatar.title')}</h2>
+    <p class="step-note">${t('avatar.note')}</p>
+    ${avatarPickHTML()}
+    <div class="close-row"><button class="btn primary" type="button" data-act="close">${t('avatar.done')}</button></div>`;
+}
+
+function renderAvatarBtn() { $('#btn-avatar').innerHTML = av(nameNow(), prefs.avatar); }
+
+function setAvatar(a, root) {
+  prefs.avatar = a; savePrefs();
+  renderAvatarBtn();
+  root?.querySelectorAll('[data-avatar]').forEach(b => b.setAttribute('aria-pressed', b.dataset.avatar === a));
+  if (session) { session.avatar = a; session.send({ t: 'profile', avatar: a }); }
+}
+
+function setStyle(st) {
+  prefs.style = st; savePrefs();
+  preloadDeck(prefs.style);
+  $('#my-stack').innerHTML = '';
+  renderHero(); if (game) { $('#pile').innerHTML = ''; renderPile(); renderMe(); }
+}
+
+// ---------------------------------------------------------------------------
+// Benvenuto: alla prima apertura si scelgono nome, mazzo e avatar.
+// ---------------------------------------------------------------------------
+function renderWelcome() {
+  $('#welcome-styles').innerHTML = stylePickHTML();
+  $('#welcome-avatars').innerHTML = avatarPickHTML($('#in-welcome-name').value.trim() || '?');
+}
+
+function openWelcome(then) {
+  $('#in-welcome-name').value = prefs.name || '';
+  renderWelcome();
+  show('welcome');
+  $('#form-welcome').onsubmit = e => {
+    e.preventDefault();
+    const n = $('#in-welcome-name').value.trim();
+    if (!n) { $('#welcome-error').textContent = t('home.err.name'); $('#in-welcome-name').focus(); return; }
+    $('#welcome-error').textContent = '';
+    prefs.name = n; prefs.setup = true; savePrefs();
+    $('#in-name').value = n;
+    renderAvatarBtn();
+    unlock();
+    then();
+  };
+}
+
+$('#screen-welcome').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.style) { setStyle(b.dataset.style); $('#welcome-styles').innerHTML = stylePickHTML(); }
+  if ('avatar' in b.dataset) setAvatar(b.dataset.avatar, $('#welcome-avatars'));
+});
+$('#in-welcome-name').addEventListener('input', () => {
+  $('#welcome-error').textContent = '';
+  $('#welcome-avatars').innerHTML = avatarPickHTML($('#in-welcome-name').value.trim() || '?');
+});
+$('#in-name').addEventListener('input', renderAvatarBtn);
 
 function rulesHTML() {
   const fig = (c, txt) => `<figure><span class="card">${card(c)}</span>${txt}</figure>`;
@@ -762,18 +890,14 @@ document.addEventListener('click', e => {
   const open = e.target.closest('[data-open]')?.dataset.open;
   if (open === 'menu') openSheet(menuHTML());
   if (open === 'rules') openSheet(rulesHTML());
+  if (open === 'avatar') openSheet(avatarSheetHTML());
 });
 $('#btn-emoji').addEventListener('click', () => openSheet(emojiHTML()));
 $('#sheet').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.emoji) { session?.send({ t: 'emoji', e: b.dataset.emoji }); closeSheet(); }
-  if (b.dataset.style) {
-    prefs.style = b.dataset.style; savePrefs();
-    preloadDeck(prefs.style);
-    $('#sheet').innerHTML = menuHTML();
-    $('#my-stack').innerHTML = '';
-    renderHero(); if (game) { $('#pile').innerHTML = ''; renderPile(); renderMe(); }
-  }
+  if (b.dataset.style) { setStyle(b.dataset.style); $('#sheet').innerHTML = menuHTML(); }
+  if ('avatar' in b.dataset) setAvatar(b.dataset.avatar, $('#sheet'));
   if (b.dataset.lang) { changeLang(b.dataset.lang); $('#sheet').innerHTML = menuHTML(); }
   if (b.dataset.pref) {
     prefs[b.dataset.pref] = !prefs[b.dataset.pref]; savePrefs();
@@ -816,6 +940,7 @@ function changeLang(l) {
   applyStatic();
   document.querySelectorAll('.lang-switch [data-lang]').forEach(b => b.setAttribute('aria-pressed', b.dataset.lang === l));
   renderHero();
+  if (current() === 'welcome') renderWelcome();
   if (lobby) renderLobby();
   if (game) { $('#pile').innerHTML = ''; renderGame(); if (!$('#overlay-end').hidden) renderEnd(); }
   const err = $('#home-error'); if (err.dataset.key) err.textContent = t(err.dataset.key);
@@ -852,13 +977,18 @@ function init() {
     if (!$('#join-box').hidden) doJoin($('#in-code').value); else doCreate();
   });
 
-  show('home');
-  if (code) {
-    $('#in-code').value = code;
-    openJoin(true);
-    let rejoin = null; try { rejoin = sessionStorage.getItem('sc-joined'); } catch {}
-    if (rejoin === code && prefs.name) doJoin(code); // pagina ricaricata: rientro da solo
-  }
-  if (params.has('prova') && prefs.name) doPractice();
+  renderAvatarBtn();
+  const start = () => {
+    show('home');
+    if (code) {
+      $('#in-code').value = code;
+      openJoin(true);
+      let rejoin = null; try { rejoin = sessionStorage.getItem('sc-joined'); } catch {}
+      if (rejoin === code && prefs.name) doJoin(code); // pagina ricaricata: rientro da solo
+    }
+    if (params.has('prova') && prefs.name) doPractice();
+  };
+  // Prima apertura: prima nome, mazzo e avatar (anche se si arriva da un link di invito).
+  if (!prefs.setup) openWelcome(start); else start();
 }
 init();

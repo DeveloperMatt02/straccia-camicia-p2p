@@ -45,4 +45,69 @@ await test('una risposta di errore (es. chiave sbagliata) non blocca il gioco', 
   assert.ok(ice.length >= 1 && !net.hasTurn());
 });
 
+// Orologio finto per il ricollegamento al server di presentazione.
+function fakeTimers() {
+  let now = 0, id = 0; const q = new Map();
+  return {
+    setTimeout: (fn, ms) => { q.set(++id, { at: now + ms, fn }); return id; },
+    clearTimeout: k => q.delete(k),
+    advance(ms) {
+      const end = now + ms;
+      for (;;) {
+        let next = null;
+        for (const [k, v] of q) if (v.at <= end && (!next || v.at < next[1].at)) next = [k, v];
+        if (!next) break;
+        q.delete(next[0]); now = next[1].at; next[1].fn();
+      }
+      now = end;
+    },
+  };
+}
+function fakePeer() {
+  return { disconnected: false, destroyed: false, reconnects: 0, reconnect() { this.reconnects++; } };
+}
+
+await test('server di presentazione: un calo breve non mostra nessun avviso', async () => {
+  const net = await fresh();
+  const timers = fakeTimers(), peer = fakePeer(), log = [];
+  const s = net.keepSignaling(peer, { timers, onDown: () => log.push('down'), onUp: () => log.push('up') });
+  peer.disconnected = true; s.down();
+  timers.advance(1600);
+  assert.equal(peer.reconnects, 1, 'riprova da solo');
+  peer.disconnected = false; s.up();                 // PeerJS rimanda 'open'
+  timers.advance(10000);
+  assert.deepEqual(log, [], 'nessun avviso e niente da togliere');
+});
+
+await test('server di presentazione: se il calo dura arriva l\'avviso, e sparisce al ritorno', async () => {
+  const net = await fresh();
+  const timers = fakeTimers(), peer = fakePeer(), log = [];
+  const s = net.keepSignaling(peer, { timers, onDown: () => log.push('down'), onUp: () => log.push('up') });
+  peer.disconnected = true;
+  s.down();
+  timers.advance(1500); s.down();                    // il tentativo fallisce: PeerJS rimanda 'disconnected'
+  timers.advance(3000); s.down();
+  timers.advance(1000);
+  assert.deepEqual(log, ['down']);
+  assert.ok(peer.reconnects >= 2, 'continua a riprovare');
+  for (let k = 0; k < 10; k++) { timers.advance(20000); s.down(); }
+  assert.ok(peer.reconnects >= 10, 'non smette mai di riprovare');
+  peer.disconnected = false; s.up();
+  assert.deepEqual(log, ['down', 'up']);
+  s.down(); peer.disconnected = true;
+  timers.advance(4000);
+  assert.deepEqual(log, ['down', 'up'], 'il conteggio riparte da capo');
+});
+
+await test('server di presentazione: chiusa la stanza non riprova più', async () => {
+  const net = await fresh();
+  const timers = fakeTimers(), peer = fakePeer();
+  let closed = false;
+  const s = net.keepSignaling(peer, { timers, isClosed: () => closed });
+  peer.disconnected = true; s.down();
+  closed = true;
+  timers.advance(60000);
+  assert.equal(peer.reconnects, 0);
+});
+
 console.log(`\n${passed} test superati`);

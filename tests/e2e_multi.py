@@ -27,7 +27,20 @@ with sync_playwright() as p:
     b = p.chromium.launch()
     ctx = b.new_context(device_scale_factor=1, locale='it-IT')
     host = page(ctx, 'host', 1280, 800)
-    host.goto(URL); host.fill('#in-name', 'Marco'); host.click('#btn-create')
+    host.goto(URL)
+    # Prima apertura: benvenuto con nome, mazzo e avatar
+    check(host.locator('#screen-welcome:not([hidden])').count() == 1, 'alla prima apertura compare il benvenuto')
+    host.fill('#in-welcome-name', 'Marco')
+    host.click('#welcome-styles [data-style="moderno"]')
+    host.click('#welcome-avatars [data-avatar="svg:moka"]')
+    host.click('#btn-welcome-go')
+    host.wait_for_selector('#screen-home:not([hidden])', timeout=3000)
+    prefs = host.evaluate("JSON.parse(localStorage.getItem('sc-prefs'))")
+    check(prefs['setup'] and prefs['style'] == 'moderno' and prefs['avatar'] == 'svg:moka' and host.input_value('#in-name') == 'Marco',
+          f'scelte salvate nel browser: {prefs}')
+    host.reload(); host.wait_for_selector('#screen-home:not([hidden])', timeout=3000)
+    check(host.locator('#screen-welcome:not([hidden])').count() == 0, 'ricaricando, il benvenuto non ricompare')
+    host.click('#btn-create')
     host.wait_for_selector('#screen-lobby:not([hidden])', timeout=5000)
     code = ''.join(host.locator('#room-code .tile').all_inner_texts())
     check(len(code) == 4, f'stanza creata con codice {code}')
@@ -38,20 +51,21 @@ with sync_playwright() as p:
     g1.fill('#in-name', 'Luca'); g1.click('#btn-join-go')
     g1.wait_for_selector('#screen-lobby:not([hidden])', timeout=5000)
     g2 = page(ctx, 'sara'); g2.goto(URL)
-    check('Asso, due e tre' in g2.inner_text('.lede'), 'browser in italiano: interfaccia in italiano')
-    g2.click('.lang-switch [data-lang="en"]')
-    check('Aces, twos and threes' in g2.inner_text('.lede') and g2.inner_text('#btn-create') == 'Create a room', 'Sara passa all\'inglese dalla pagina iniziale')
+    check('Asso, due e tre' in g2.inner_text('#screen-home .lede'), 'browser in italiano: interfaccia in italiano')
+    g2.click('#screen-home .lang-switch [data-lang="en"]')
+    check('Aces, twos and threes' in g2.inner_text('#screen-home .lede') and g2.inner_text('#btn-create') == 'Create a room', 'Sara passa all\'inglese dalla pagina iniziale')
     g2.fill('#in-name', 'Sara'); g2.click('#btn-join')
     g2.fill('#in-code', code.lower()); g2.click('#btn-join-go')
     g2.wait_for_selector('#screen-lobby:not([hidden])', timeout=5000)
     host.wait_for_timeout(300)
     names = host.locator('#lobby-players .name').all_inner_texts()
     check(len(names) == 3, f'l\'host vede 3 giocatori: {[n.split()[0] for n in names]}')
+    check(g1.locator('#lobby-players li >> nth=0').locator('.avatar.art').count() == 1, 'gli altri vedono l\'avatar disegnato di Marco')
     check('Room rules' in g2.inner_text('#screen-lobby') and 'Regole della stanza' in host.inner_text('#screen-lobby'),
           'stessa stanza, lingue diverse: Sara in inglese, Marco in italiano')
 
     # Codice sbagliato
-    bad = page(ctx, 'bad'); bad.goto(URL); bad.click('.lang-switch [data-lang="it"]'); bad.fill('#in-name', 'Ugo'); bad.click('#btn-join')
+    bad = page(ctx, 'bad'); bad.goto(URL); bad.click('#screen-home .lang-switch [data-lang="it"]'); bad.fill('#in-name', 'Ugo'); bad.click('#btn-join')
     bad.fill('#in-code', 'ZZZZ'); bad.click('#btn-join-go'); bad.wait_for_timeout(800)
     check('non trovata' in bad.inner_text('#home-error'), 'codice inesistente: messaggio chiaro')
     bad.close()
@@ -99,8 +113,51 @@ with sync_playwright() as p:
     check(plays > 60, f'si gioca a turno da 3 dispositivi ({plays} carte toccate)')
 
     # Tutti vedono lo stesso mazzetto
-    a = host.inner_text('#pile-count'); c = g2.inner_text('#pile-count')
-    check(a == c, f'mazzetto uguale su host e ospiti ({a!r})')
+    host.wait_for_timeout(300)  # l'ultima carta toccata può essere ancora in viaggio
+    # (confronto i numeri: Marco legge in italiano, Sara in inglese)
+    a = re.findall(r'\d+', host.inner_text('#pile-count')); c = re.findall(r'\d+', g2.inner_text('#pile-count'))
+    check(a == c, f'mazzetto uguale su host e ospiti ({a!r} / {c!r})')
+
+    # Luca cambia avatar durante la partita: l'host lo vede subito al tavolo
+    g1.click('.game-top [data-open="menu"]'); g1.click('#sheet [data-open="avatar"]')
+    g1.click('#sheet [data-avatar="emoji:🦊"]'); g1.click('#sheet [data-act="close"]')
+    host.wait_for_timeout(300)
+    check('🦊' in host.inner_text('#arc'), 'l\'avatar cambiato da Luca in partita arriva all\'host')
+
+    # Il server di presentazione dell'host cade per poco: nessun avviso, il gioco va avanti
+    def host_peer(js):
+        return host.evaluate(f"(() => {{ const p = window.__mockPeers.find(p => p.id.startsWith('straccia-camicia') && !p.destroyed); {js} }})()")
+    host_peer('p.dropServer()'); host.wait_for_timeout(2500)
+    check(host.locator('#banner').is_hidden(), 'calo breve del server: nessun avviso a chi ospita')
+    host_peer('p.serverUp()'); host.wait_for_timeout(2500)
+    check(host_peer('return p.disconnected') is False, 'l\'host si ricollega da solo')
+    # Ora cade a lungo: compare l'avviso, poi sparisce quando torna
+    host_peer('p.dropServer()'); host.wait_for_timeout(6500)
+    check('nessun altro può entrare' in host.inner_text('#banner'), 'calo lungo: avviso chiaro → ' + host.inner_text('#banner'))
+    host_peer('p.serverUp()'); host.wait_for_timeout(7000)
+    check(host.locator('#banner').is_hidden(), 'il server torna: l\'avviso sparisce da solo')
+    names = host.evaluate("window.__scSession.room.order.length")
+    check(names == 3, f'ricollegarsi non duplica nulla nella stanza ({names} giocatori)')
+    plays_before = host.evaluate("window.__scSession.room.game.plays")
+    for step in range(40):
+        for name, pg in pages.items():
+            if pg.locator('#my-deck.ready').count(): pg.click('#my-deck')
+        host.wait_for_timeout(60)
+    check(host.evaluate("window.__scSession.room.game.plays") > plays_before, 'e la partita continua')
+
+    # Luca perde sia il server sia il collegamento con l'host: deve riprovare finché torna
+    def luca_peer(js):
+        return g1.evaluate(f"(() => {{ const p = window.__mockPeers.find(p => p.id.startsWith('anon-') && !p.destroyed); {js} }})()")
+    luca_peer('p.dropServer(); Object.values(p.conns).forEach(c => c.close())')
+    g1.wait_for_timeout(1500)
+    check('riprovo' in g1.inner_text('#banner'), 'Luca vede che la connessione è caduta: ' + g1.inner_text('#banner'))
+    g1.wait_for_timeout(3000)
+    luca_peer('p.serverUp()')
+    g1.wait_for_selector('#banner', state='hidden', timeout=15000)
+    check(True, 'appena torna la linea Luca si ricollega da solo')
+    check(host.evaluate("window.__scSession.room.members.get(window.__scSession.room.order[1]).connected"), 'e l\'host lo vede di nuovo collegato')
+    host.wait_for_timeout(300)
+    check('🦊' in host.inner_text('#arc'), 'dopo il ricollegamento Luca tiene l\'avatar scelto in partita')
 
     # Sara chiude la scheda: gioca da sola; poi rientra con il link e riprende il posto
     g2_url = g2.url
@@ -112,7 +169,7 @@ with sync_playwright() as p:
     g2.route('**/fonts.googleapis.com/**', lambda r: r.abort())
     g2.route('**/peerjs.min.js', lambda r: r.fulfill(status=200, content_type='application/javascript', body=MOCK))
     # Sui telefoni veri ognuno ha la sua memoria; qui le pagine la condividono, quindi la reimposto per Sara.
-    g2.add_init_script(f"sessionStorage.setItem('sc-cid','{sara_cid}'); sessionStorage.setItem('sc-joined','{code}'); localStorage.setItem('sc-prefs', JSON.stringify({{name:'Sara', lang:'en'}}))")
+    g2.add_init_script(f"sessionStorage.setItem('sc-cid','{sara_cid}'); sessionStorage.setItem('sc-joined','{code}'); localStorage.setItem('sc-prefs', JSON.stringify({{name:'Sara', lang:'en', setup:true}}))")
     g2.goto(g2_url)
     g2.wait_for_selector('#screen-game:not([hidden])', timeout=6000)
     host.wait_for_timeout(500)
